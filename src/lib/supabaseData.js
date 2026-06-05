@@ -7,6 +7,17 @@ const TABLES = {
   invoices: 'state_invoices',
 }
 
+export async function fetchCurrentProfile(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id,email,full_name,role,created_at')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
+}
+
 export async function fetchDashboardData() {
   const [houses, rooms, readings, invoices] = await Promise.all([
     supabase.from(TABLES.houses).select('*').order('created_at', { ascending: true }),

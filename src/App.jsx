@@ -17,6 +17,8 @@ import {
   WalletCards,
   Zap,
 } from 'lucide-react'
+import Login from './components/Login'
+import ProtectedRoute from './components/ProtectedRoute'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { sampleData } from './lib/sampleData'
 import {
@@ -33,6 +35,7 @@ import {
 import {
   deleteHouseRecord,
   deleteRoomRecord,
+  fetchCurrentProfile,
   fetchDashboardData,
   saveHouseRecord,
   saveInvoiceRecord,
@@ -46,7 +49,30 @@ const demoUser = {
 
 export default function App() {
   const [session, setSession] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileError, setProfileError] = useState('')
+
+  const loadProfile = useCallback(async (nextSession) => {
+    if (!nextSession?.user?.id) {
+      setProfile(null)
+      setProfileError('')
+      return
+    }
+
+    setProfileLoading(true)
+    setProfileError('')
+    try {
+      const nextProfile = await fetchCurrentProfile(nextSession.user.id)
+      setProfile(nextProfile)
+    } catch (error) {
+      setProfile(null)
+      setProfileError(error.message)
+    } finally {
+      setProfileLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -54,41 +80,65 @@ export default function App() {
     }
 
     let mounted = true
-    supabase.auth.getSession().then(({ data }) => {
+
+    async function applySession(nextSession) {
       if (!mounted) return
-      setSession(data.session)
-      setAuthLoading(false)
+      setSession(nextSession)
+      await loadProfile(nextSession)
+      if (mounted) {
+        setAuthLoading(false)
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      applySession(data.session)
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setAuthLoading(false)
+      applySession(nextSession)
     })
 
     return () => {
       mounted = false
       listener.subscription.unsubscribe()
     }
+  }, [loadProfile])
+
+  const handleSignOut = useCallback(async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut()
+    }
+    setSession(null)
+    setProfile(null)
+    setProfileError('')
   }, [])
+
+  if (!isSupabaseConfigured) {
+    return <Dashboard mode="demo" user={demoUser} profile={{ role: 'admin' }} onSignOut={handleSignOut} />
+  }
 
   if (authLoading) {
     return <Splash />
   }
 
-  if (isSupabaseConfigured && !session) {
-    return <AuthPanel />
+  if (!session) {
+    return <Login />
   }
 
   return (
-    <Dashboard
-      mode={isSupabaseConfigured ? 'supabase' : 'demo'}
-      user={session?.user ?? demoUser}
-      onSignOut={async () => {
-        if (isSupabaseConfigured) {
-          await supabase.auth.signOut()
-        }
-      }}
-    />
+    <ProtectedRoute
+      loading={profileLoading}
+      profile={profile}
+      error={profileError}
+      onSignOut={handleSignOut}
+    >
+      <Dashboard
+        mode="supabase"
+        user={session.user}
+        profile={profile}
+        onSignOut={handleSignOut}
+      />
+    </ProtectedRoute>
   )
 }
 
@@ -104,118 +154,7 @@ function Splash() {
   )
 }
 
-function AuthPanel() {
-  const [mode, setMode] = useState('sign-in')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [message, setMessage] = useState('')
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSubmitting(true)
-    setMessage('')
-
-    const action =
-      mode === 'sign-in'
-        ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({ email, password })
-    const { error } = await action
-
-    if (error) {
-      setMessage(error.message)
-    } else if (mode === 'sign-up') {
-      setMessage('Tài khoản đã được tạo. Kiểm tra email nếu Supabase yêu cầu xác nhận.')
-    }
-
-    setSubmitting(false)
-  }
-
-  return (
-    <main className="auth-shell">
-      <section className="auth-visual">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <Home size={26} />
-          </div>
-          <div>
-            <strong>Nhà trọ Manager</strong>
-            <span>Static React + Supabase Free</span>
-          </div>
-        </div>
-        <div className="auth-ledger">
-          <div>
-            <span>Tổng thu</span>
-            <strong>14,7tr</strong>
-          </div>
-          <div>
-            <span>Tổng chi</span>
-            <strong>1,27tr</strong>
-          </div>
-          <div>
-            <span>Cảnh báo</span>
-            <strong>3</strong>
-          </div>
-        </div>
-      </section>
-
-      <form className="auth-card" onSubmit={handleSubmit}>
-        <div>
-          <p className="eyeline">Đăng nhập Supabase</p>
-          <h1>Quản lý điện nước và dòng tiền nhà trọ</h1>
-        </div>
-
-        <div className="segmented">
-          <button
-            type="button"
-            className={mode === 'sign-in' ? 'active' : ''}
-            onClick={() => setMode('sign-in')}
-          >
-            Đăng nhập
-          </button>
-          <button
-            type="button"
-            className={mode === 'sign-up' ? 'active' : ''}
-            onClick={() => setMode('sign-up')}
-          >
-            Tạo tài khoản
-          </button>
-        </div>
-
-        <label className="field">
-          <span>Email</span>
-          <input
-            type="email"
-            value={email}
-            autoComplete="email"
-            required
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>Mật khẩu</span>
-          <input
-            type="password"
-            value={password}
-            autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-            minLength={6}
-            required
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </label>
-
-        {message ? <p className="form-message">{message}</p> : null}
-
-        <button className="primary-button" type="submit" disabled={submitting}>
-          {submitting ? <Loader2 className="spin" size={17} /> : <ShieldCheck size={17} />}
-          {mode === 'sign-in' ? 'Đăng nhập' : 'Tạo tài khoản'}
-        </button>
-      </form>
-    </main>
-  )
-}
-
-function Dashboard({ mode, user, onSignOut }) {
+function Dashboard({ mode, user, profile, onSignOut }) {
   const [data, setData] = useState(sampleData)
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
   const [selectedHouseId, setSelectedHouseId] = useState(sampleData.houses[0]?.id ?? '')
@@ -476,6 +415,7 @@ function Dashboard({ mode, user, onSignOut }) {
       <Sidebar
         mode={mode}
         user={user}
+        profile={profile}
         houseCount={data.houses.length}
         roomCount={data.rooms.length}
         onSignOut={onSignOut}
@@ -590,7 +530,7 @@ function Dashboard({ mode, user, onSignOut }) {
   )
 }
 
-function Sidebar({ mode, user, houseCount, roomCount, onSignOut }) {
+function Sidebar({ mode, user, profile, houseCount, roomCount, onSignOut }) {
   return (
     <aside className="sidebar">
       <div className="brand-lockup">
@@ -635,6 +575,9 @@ function Sidebar({ mode, user, houseCount, roomCount, onSignOut }) {
 
       <div className="account-box">
         <span>{user?.email}</span>
+        {mode === 'supabase' && profile?.role ? (
+          <span className="mode-chip">{profile.role === 'admin' ? 'Admin' : profile.role}</span>
+        ) : null}
         {mode === 'supabase' ? (
           <button className="ghost-button" type="button" onClick={onSignOut}>
             <LogOut size={16} />

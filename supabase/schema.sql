@@ -3,6 +3,76 @@
 
 create extension if not exists pgcrypto;
 
+create table if not exists public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  email text,
+  full_name text,
+  role text not null default 'viewer' check (role in ('admin', 'viewer')),
+  created_at timestamp with time zone not null default now()
+);
+
+create index if not exists profiles_role_idx on public.profiles (role);
+
+create or replace function public.current_user_is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $
+  select exists (
+    select 1
+    from public.profiles
+    where id = (select auth.uid())
+      and role = 'admin'
+  );
+$;
+
+revoke all on function public.current_user_is_admin() from public;
+grant execute on function public.current_user_is_admin() to authenticated;
+
+create or replace function public.handle_new_user_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $
+begin
+  insert into public.profiles (id, email, full_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data ->> 'full_name', '')
+  )
+  on conflict (id) do update
+    set email = excluded.email;
+  return new;
+end;
+$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user_profile();
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "users read own profile" on public.profiles;
+create policy "users read own profile"
+on public.profiles
+for select
+to authenticated
+using (id = (select auth.uid()) or public.current_user_is_admin());
+
+drop policy if exists "admins manage profiles" on public.profiles;
+create policy "admins manage profiles"
+on public.profiles
+for all
+to authenticated
+using (public.current_user_is_admin())
+with check (public.current_user_is_admin());
+
+
 create table if not exists public.houses (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
@@ -117,17 +187,18 @@ create policy "owners manage houses"
 on public.houses
 for all
 to authenticated
-using (owner_id = (select auth.uid()))
-with check (owner_id = (select auth.uid()));
+using (owner_id = (select auth.uid()) and public.current_user_is_admin())
+with check (owner_id = (select auth.uid()) and public.current_user_is_admin());
 
 drop policy if exists "owners manage rooms" on public.rooms;
 create policy "owners manage rooms"
 on public.rooms
 for all
 to authenticated
-using (owner_id = (select auth.uid()))
+using (owner_id = (select auth.uid()) and public.current_user_is_admin())
 with check (
   owner_id = (select auth.uid())
+  and public.current_user_is_admin()
   and exists (
     select 1
     from public.houses h
@@ -141,9 +212,10 @@ create policy "owners manage readings"
 on public.room_meter_readings
 for all
 to authenticated
-using (owner_id = (select auth.uid()))
+using (owner_id = (select auth.uid()) and public.current_user_is_admin())
 with check (
   owner_id = (select auth.uid())
+  and public.current_user_is_admin()
   and exists (
     select 1
     from public.rooms r
@@ -158,9 +230,10 @@ create policy "owners manage state invoices"
 on public.state_invoices
 for all
 to authenticated
-using (owner_id = (select auth.uid()))
+using (owner_id = (select auth.uid()) and public.current_user_is_admin())
 with check (
   owner_id = (select auth.uid())
+  and public.current_user_is_admin()
   and exists (
     select 1
     from public.houses h

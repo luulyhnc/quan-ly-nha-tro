@@ -41,6 +41,31 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 Tat ca bang deu bat Row Level Security. Du lieu moi gan voi `auth.uid()` cua user dang nhap.
 
+
+## Admin Auth va phan quyen
+
+Khi chua cau hinh Supabase env, app van chay demo local. Khi da co `VITE_SUPABASE_URL` va `VITE_SUPABASE_ANON_KEY`, app bat buoc dang nhap bang Supabase Auth va chi user co `profiles.role = admin` moi vao duoc dashboard.
+
+Chay SQL moi nhat:
+
+```sql
+-- Cho database moi: chay toan bo file
+-- supabase/schema.sql
+
+-- Cho database da tao truoc do: chay file migration
+-- supabase/rls.sql
+```
+
+Sau khi tao/dang ky tai khoan admin bang man hinh Login, vao Supabase SQL Editor va set role:
+
+```sql
+update public.profiles
+set role = 'admin'
+where email = 'your-admin-email@example.com';
+```
+
+Khong dua service role key vao frontend. Frontend chi duoc dung anon public key qua `VITE_SUPABASE_ANON_KEY`; bao mat du lieu dua vao Supabase Auth + RLS.
+
 ## Deploy GitHub Pages
 
 1. Push repo len GitHub branch `main`.
