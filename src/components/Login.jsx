@@ -25,13 +25,10 @@ export default function Login() {
     setSubmitting(true)
     setMessage('')
 
-    const credentials = { email, password }
-    const action =
+    const { error } =
       mode === 'sign-in'
-        ? supabase.auth.signInWithPassword(credentials)
-        : supabase.auth.signUp(credentials)
-
-    const { error } = await action
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password })
 
     if (error) {
       setMessage(error.message)

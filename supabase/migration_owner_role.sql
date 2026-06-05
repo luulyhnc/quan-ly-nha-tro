@@ -1,9 +1,16 @@
--- Supabase RLS policies for owner/admin/viewer roles.
--- Run after supabase/schema.sql.
+-- Migration: owner/admin/viewer roles and RLS policies.
+-- Safe to run multiple times in Supabase SQL Editor.
+-- Does not drop tables and does not delete data.
 
 alter table public.profiles add column if not exists role text not null default 'viewer';
 alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('owner', 'admin', 'viewer'));
+
+update public.profiles
+set role = 'owner',
+    full_name = 'Chủ sở hữu',
+    updated_at = now()
+where email = 'lethuhien211094@gmail.com';
 
 create or replace function public.current_user_is_owner()
 returns boolean

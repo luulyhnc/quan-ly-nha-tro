@@ -60,6 +60,10 @@ export async function saveHouseRecord(house) {
     electricity_rate: numberOrZero(house.electricity_rate),
     water_rate: numberOrZero(house.water_rate),
     alert_variance_percent: numberOrZero(house.alert_variance_percent || 8),
+    electric_unit_price: numberOrZero(house.electricity_rate),
+    water_unit_price: numberOrZero(house.water_rate),
+    warning_threshold_percent: numberOrZero(house.alert_variance_percent || 8),
+    sort_order: numberOrZero(house.sort_order),
   })
 
   const { data, error } = await supabase.from(TABLES.houses).upsert(payload).select().single()
@@ -77,9 +81,13 @@ export async function saveRoomRecord(room) {
     id: room.id,
     house_id: room.house_id,
     name: room.name,
+    room_code: room.name,
+    room_name: room.name,
     floor: room.floor,
     resident_count: numberOrZero(room.resident_count),
+    occupants: numberOrZero(room.resident_count),
     monthly_rent: numberOrZero(room.monthly_rent),
+    room_price: numberOrZero(room.monthly_rent),
     service_fee_per_person: numberOrZero(room.service_fee_per_person),
     status: room.status,
     sort_order: numberOrZero(room.sort_order),
@@ -105,6 +113,10 @@ export async function saveReadingRecord(reading) {
     electricity_current: numberOrZero(reading.electricity_current),
     water_previous: numberOrZero(reading.water_previous),
     water_current: numberOrZero(reading.water_current),
+    electric_old: numberOrZero(reading.electricity_previous),
+    electric_new: numberOrZero(reading.electricity_current),
+    water_old: numberOrZero(reading.water_previous),
+    water_new: numberOrZero(reading.water_current),
     note: reading.note ?? '',
   })
 
@@ -127,6 +139,11 @@ export async function saveInvoiceRecord(invoice) {
     water_m3: numberOrZero(invoice.water_m3),
     water_amount: numberOrZero(invoice.water_amount),
     other_amount: numberOrZero(invoice.other_amount),
+    state_electric_kwh: numberOrZero(invoice.electricity_kwh),
+    state_electric_amount: numberOrZero(invoice.electricity_amount),
+    state_water_m3: numberOrZero(invoice.water_m3),
+    state_water_amount: numberOrZero(invoice.water_amount),
+    other_fee: numberOrZero(invoice.other_amount),
     note: invoice.note ?? '',
   })
 
