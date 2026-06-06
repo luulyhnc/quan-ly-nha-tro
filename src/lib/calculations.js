@@ -79,6 +79,7 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
   const rooms = data.rooms ?? []
   const readings = data.readings ?? []
   const invoices = data.invoices ?? []
+  const marketSurveys = data.marketSurveys ?? []
   const house = houses.find((item) => item.id === selectedHouseId) ?? houses[0]
 
   if (!house) {
@@ -88,11 +89,13 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
       invoice: null,
       alerts: [],
       totals: emptyTotals(),
+      business: emptyBusiness(),
     }
   }
 
   const monthDate = monthToDate(selectedMonth)
-  const previousMonthDate = monthToDate(getPreviousMonth(selectedMonth))
+  const previousMonth = getPreviousMonth(selectedMonth)
+  const previousMonthDate = monthToDate(previousMonth)
   const houseRooms = rooms
     .filter((room) => room.house_id === house.id)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
@@ -100,7 +103,25 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
     invoices.find((item) => item.house_id === house.id && item.month === monthDate) ??
     createEmptyInvoice(house.id, selectedMonth)
 
-  const roomRows = houseRooms.map((room) => {
+  const roomRows = buildRoomRows({ house, rooms: houseRooms, readings, selectedMonth, previousMonthDate })
+  const totals = buildTotals(roomRows, invoice)
+  const previousTotals = buildMonthTotals({ house, rooms: houseRooms, readings, invoices, month: previousMonth })
+  const business = buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals, house })
+
+  return {
+    house,
+    roomRows,
+    invoice,
+    totals,
+    business,
+    alerts: buildAlerts({ house, roomRows, invoice, totals, business }),
+  }
+}
+
+function buildRoomRows({ house, rooms, readings, selectedMonth, previousMonthDate }) {
+  const monthDate = monthToDate(selectedMonth)
+
+  return rooms.map((room) => {
     const reading =
       readings.find((item) => item.room_id === room.id && item.month === monthDate) ??
       createEmptyReading(room, selectedMonth)
@@ -148,7 +169,9 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
       previousWaterUsage,
     }
   })
+}
 
+function buildTotals(roomRows, invoice) {
   const totals = roomRows.reduce(
     (acc, row) => {
       acc.residents += toNumber(row.room.resident_count)
@@ -162,17 +185,7 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
       acc.totalRevenue += row.totalRevenue
       return acc
     },
-    {
-      residents: 0,
-      electricityUsage: 0,
-      waterUsage: 0,
-      electricityRevenue: 0,
-      waterRevenue: 0,
-      utilityRevenue: 0,
-      rentRevenue: 0,
-      serviceRevenue: 0,
-      totalRevenue: 0,
-    },
+    emptyTotals(),
   )
 
   totals.electricityCost = toNumber(invoice.electricity_amount)
@@ -190,13 +203,21 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
   )
   totals.waterVariancePercent = percentageVariance(totals.waterUsage, totals.invoiceWaterM3)
 
-  return {
+  return totals
+}
+
+function buildMonthTotals({ house, rooms, readings, invoices, month }) {
+  const invoice =
+    invoices.find((item) => item.house_id === house.id && item.month === monthToDate(month)) ??
+    createEmptyInvoice(house.id, month)
+  const rows = buildRoomRows({
     house,
-    roomRows,
-    invoice,
-    totals,
-    alerts: buildAlerts({ house, roomRows, invoice, totals }),
-  }
+    rooms,
+    readings,
+    selectedMonth: month,
+    previousMonthDate: monthToDate(getPreviousMonth(month)),
+  })
+  return buildTotals(rows, invoice)
 }
 
 function emptyTotals() {
@@ -210,13 +231,142 @@ function emptyTotals() {
     rentRevenue: 0,
     serviceRevenue: 0,
     totalRevenue: 0,
+    electricityCost: 0,
+    waterCost: 0,
+    otherCost: 0,
     totalCost: 0,
     difference: 0,
     differencePerResident: 0,
     utilityDifference: 0,
+    invoiceElectricityKwh: 0,
+    invoiceWaterM3: 0,
     electricityVariancePercent: 0,
     waterVariancePercent: 0,
   }
+}
+
+function emptyBusiness() {
+  return {
+    market: emptyMarketStats(),
+    roomComparisons: [],
+    recommendations: [],
+    electricityProfit: 0,
+    waterProfit: 0,
+    serviceProfit: 0,
+    profitMarginPercent: 0,
+    houseAverageRent: 0,
+    lowPricedRoomCount: 0,
+    highPricedRoomCount: 0,
+    actionAlertCount: 0,
+    previousElectricityProfit: 0,
+    previousWaterProfit: 0,
+    previousServiceProfit: 0,
+    actualElectricUnitCost: 0,
+    actualWaterUnitCost: 0,
+  }
+}
+
+function emptyMarketStats() {
+  return {
+    count: 0,
+    averageRent: 0,
+    minRent: 0,
+    maxRent: 0,
+    averageElectricPrice: 0,
+    averageWaterPrice: 0,
+    averageServiceFee: 0,
+    averageInternetFee: 0,
+  }
+}
+
+function buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals, house }) {
+  const market = calculateMarketStats(marketSurveys)
+  const roomsWithRent = roomRows.filter((row) => toNumber(row.room.monthly_rent) > 0)
+  const houseAverageRent = average(roomsWithRent.map((row) => row.room.monthly_rent))
+  const activeRevenuePerResident = roomRows
+    .filter((row) => toNumber(row.room.resident_count) > 0)
+    .map((row) => row.totalRevenue / toNumber(row.room.resident_count))
+  const averageRevenuePerResident = average(activeRevenuePerResident)
+  const electricityProfit = totals.electricityRevenue - totals.electricityCost
+  const waterProfit = totals.waterRevenue - totals.waterCost
+  const serviceProfit = totals.serviceRevenue - totals.otherCost
+  const profitMarginPercent = totals.totalRevenue > 0 ? (totals.difference / totals.totalRevenue) * 100 : 0
+  const actualElectricUnitCost = totals.invoiceElectricityKwh > 0 ? totals.electricityCost / totals.invoiceElectricityKwh : 0
+  const actualWaterUnitCost = totals.invoiceWaterM3 > 0 ? totals.waterCost / totals.invoiceWaterM3 : 0
+
+  const roomComparisons = roomRows.map((row) => {
+    const roomRent = toNumber(row.room.monthly_rent)
+    const marketDeltaPercent = market.averageRent > 0 ? ((roomRent - market.averageRent) / market.averageRent) * 100 : 0
+    const residents = toNumber(row.room.resident_count)
+    const revenuePerResident = residents > 0 ? row.totalRevenue / residents : 0
+    const revenuePerResidentDeltaPercent =
+      averageRevenuePerResident > 0 && residents > 0
+        ? ((revenuePerResident - averageRevenuePerResident) / averageRevenuePerResident) * 100
+        : 0
+
+    return {
+      room: row.room,
+      rent: roomRent,
+      marketDeltaPercent,
+      revenuePerResident,
+      revenuePerResidentDeltaPercent,
+      isLowMarketRent: market.averageRent > 0 && roomRent < market.averageRent * 0.9,
+      isHighMarketRent: market.averageRent > 0 && roomRent > market.averageRent * 1.15,
+      isLowRevenuePerResident: residents > 0 && averageRevenuePerResident > 0 && revenuePerResident < averageRevenuePerResident * 0.85,
+    }
+  })
+
+  const lowPricedRoomCount = roomComparisons.filter((item) => item.isLowMarketRent).length
+  const highPricedRoomCount = roomComparisons.filter((item) => item.isHighMarketRent).length
+  const actionAlertCount =
+    lowPricedRoomCount +
+    highPricedRoomCount +
+    roomComparisons.filter((item) => item.isLowRevenuePerResident).length +
+    (electricityProfit < 0 ? 1 : 0) +
+    (waterProfit < 0 ? 1 : 0) +
+    (serviceProfit < 0 ? 1 : 0)
+
+  const business = {
+    market,
+    roomComparisons,
+    electricityProfit,
+    waterProfit,
+    serviceProfit,
+    profitMarginPercent,
+    houseAverageRent,
+    lowPricedRoomCount,
+    highPricedRoomCount,
+    actionAlertCount,
+    previousElectricityProfit: previousTotals.electricityRevenue - previousTotals.electricityCost,
+    previousWaterProfit: previousTotals.waterRevenue - previousTotals.waterCost,
+    previousServiceProfit: previousTotals.serviceRevenue - previousTotals.otherCost,
+    actualElectricUnitCost,
+    actualWaterUnitCost,
+  }
+
+  business.recommendations = buildRecommendations({ business, totals, roomRows, house })
+  return business
+}
+
+function calculateMarketStats(marketSurveys) {
+  const validSurveys = (marketSurveys ?? []).filter((survey) => toNumber(survey.monthly_rent) > 0)
+  const rents = validSurveys.map((survey) => toNumber(survey.monthly_rent))
+  return {
+    count: validSurveys.length,
+    averageRent: average(rents),
+    minRent: rents.length ? Math.min(...rents) : 0,
+    maxRent: rents.length ? Math.max(...rents) : 0,
+    averageElectricPrice: average(validSurveys.map((survey) => survey.electric_price)),
+    averageWaterPrice: average(validSurveys.map((survey) => survey.water_price)),
+    averageServiceFee: average(validSurveys.map((survey) => survey.service_fee)),
+    averageInternetFee: average(validSurveys.map((survey) => survey.internet_fee)),
+  }
+}
+
+function average(values) {
+  const numbers = values.map(toNumber).filter((value) => value > 0)
+  if (!numbers.length) return 0
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length
 }
 
 function percentageVariance(actual, expected) {
@@ -226,7 +376,7 @@ function percentageVariance(actual, expected) {
   return ((actual - expected) / expected) * 100
 }
 
-function buildAlerts({ house, roomRows, invoice, totals }) {
+function buildAlerts({ house, roomRows, invoice, totals, business }) {
   const alerts = []
   const threshold = toNumber(house.alert_variance_percent || 8)
 
@@ -262,12 +412,76 @@ function buildAlerts({ house, roomRows, invoice, totals }) {
     })
   }
 
-  if (totals.utilityDifference < 0) {
+  if (business.lowPricedRoomCount > 0) {
+    alerts.push({
+      level: 'warning',
+      title: 'Gia thue dang thap hon thi truong',
+      detail: `${business.lowPricedRoomCount} phong thap hon trung binh khao sat tren 10%.`,
+    })
+  }
+
+  if (business.highPricedRoomCount > 0) {
+    alerts.push({
+      level: 'warning',
+      title: 'Gia thue dang cao hon thi truong',
+      detail: `${business.highPricedRoomCount} phong cao hon trung binh khao sat tren 15%, can kiem tra ty le trong.`,
+    })
+  }
+
+  if (business.actualElectricUnitCost > 0 && toNumber(house.electricity_rate) < business.actualElectricUnitCost) {
     alerts.push({
       level: 'danger',
-      title: 'Thu dien nuoc thap hon chi',
-      detail: `Chenh lech tien dien/nuoc dang am ${formatCurrency(Math.abs(totals.utilityDifference))}.`,
+      title: 'Dang lo dien',
+      detail: `Gia thu ${formatCurrency(house.electricity_rate)}/kWh thap hon chi phi thuc te ${formatCurrency(business.actualElectricUnitCost)}/kWh.`,
     })
+  } else if (business.electricityProfit < 0) {
+    alerts.push({
+      level: 'danger',
+      title: 'Dang lo dien',
+      detail: `Tien dien dang am ${formatCurrency(Math.abs(business.electricityProfit))}.`,
+    })
+  }
+
+  if (business.actualWaterUnitCost > 0 && toNumber(house.water_rate) < business.actualWaterUnitCost) {
+    alerts.push({
+      level: 'danger',
+      title: 'Dang lo nuoc',
+      detail: `Gia thu ${formatCurrency(house.water_rate)}/m3 thap hon chi phi thuc te ${formatCurrency(business.actualWaterUnitCost)}/m3.`,
+    })
+  } else if (business.waterProfit < 0) {
+    alerts.push({
+      level: 'danger',
+      title: 'Dang lo nuoc',
+      detail: `Tien nuoc dang am ${formatCurrency(Math.abs(business.waterProfit))}.`,
+    })
+  }
+
+  if (business.serviceProfit < 0) {
+    alerts.push({
+      level: 'warning',
+      title: 'Phi dich vu chua du bu chi phi',
+      detail: `Chi phi khac vuot phi dich vu thu ${formatCurrency(Math.abs(business.serviceProfit))}.`,
+    })
+  }
+
+  if (business.electricityProfit < 0 && business.previousElectricityProfit < 0) {
+    alerts.push({ level: 'danger', title: 'Xu huong lo dien lien tiep', detail: 'Dien dang lo 2 thang lien tiep.' })
+  }
+  if (business.waterProfit < 0 && business.previousWaterProfit < 0) {
+    alerts.push({ level: 'danger', title: 'Xu huong lo nuoc lien tiep', detail: 'Nuoc dang lo 2 thang lien tiep.' })
+  }
+  if (business.serviceProfit < 0 && business.previousServiceProfit < 0) {
+    alerts.push({ level: 'warning', title: 'Xu huong lo phi lien tiep', detail: 'Phi dich vu khong du bu chi phi 2 thang lien tiep.' })
+  }
+
+  for (const comparison of business.roomComparisons) {
+    if (comparison.isLowRevenuePerResident) {
+      alerts.push({
+        level: 'warning',
+        title: `${comparison.room.name}: phong dinh gia thap`,
+        detail: 'Doanh thu tren moi nguoi thap hon trung binh nha tren 15%.',
+      })
+    }
   }
 
   for (const row of roomRows) {
@@ -291,33 +505,33 @@ function buildAlerts({ house, roomRows, invoice, totals }) {
     if (residents > 0 && row.electricityUsage / residents > 120) {
       alerts.push({
         level: 'warning',
-        title: `${row.room.name}: điện/người cao`,
-        detail: `${formatNumber(row.electricityUsage / residents)} kWh mỗi người.`,
+        title: `${row.room.name}: dien/ng??i cao`,
+        detail: `${formatNumber(row.electricityUsage / residents)} kWh moi nguoi.`,
       })
     }
 
     if (residents > 0 && row.waterUsage / residents > 8) {
       alerts.push({
         level: 'warning',
-        title: `${row.room.name}: nước/người cao`,
-        detail: `${formatNumber(row.waterUsage / residents)} m3 mỗi người.`,
+        title: `${row.room.name}: nuoc/ng??i cao`,
+        detail: `${formatNumber(row.waterUsage / residents)} m3 moi nguoi.`,
       })
     }
 
-    if (row.previousElectricityUsage && row.electricityUsage > row.previousElectricityUsage * 1.8) {
+    if (row.previousElectricityUsage && row.electricityUsage > row.previousElectricityUsage * 1.3) {
       alerts.push({
         level: 'warning',
-        title: `${row.room.name}: dien tang manh`,
+        title: `${row.room.name}: tieu thu dien bat thuong`,
         detail: `Tu ${formatNumber(row.previousElectricityUsage)} len ${formatNumber(
           row.electricityUsage,
         )} kWh so voi thang truoc.`,
       })
     }
 
-    if (row.previousWaterUsage && row.waterUsage > row.previousWaterUsage * 1.8) {
+    if (row.previousWaterUsage && row.waterUsage > row.previousWaterUsage * 1.3) {
       alerts.push({
         level: 'warning',
-        title: `${row.room.name}: nuoc tang manh`,
+        title: `${row.room.name}: tieu thu nuoc bat thuong`,
         detail: `Tu ${formatNumber(row.previousWaterUsage)} len ${formatNumber(row.waterUsage)} m3.`,
       })
     }
@@ -327,9 +541,60 @@ function buildAlerts({ house, roomRows, invoice, totals }) {
     alerts.push({
       level: 'success',
       title: 'Khong co bat thuong lon',
-      detail: 'San luong va dong tien nam trong nguong canh bao cua nha.',
+      detail: 'San luong, dong tien va dinh gia nam trong nguong canh bao cua nha.',
     })
   }
 
   return alerts
+}
+
+function buildRecommendations({ business, totals, roomRows, house }) {
+  const recommendations = []
+
+  if (!business.market.count) {
+    recommendations.push('Nhap them khao sat thi truong de co mat bang gia thu? khu vuc va canh bao dinh gia chinh xac hon.')
+  }
+
+  if (business.lowPricedRoomCount > 0 && business.market.averageRent > 0) {
+    recommendations.push(`Xem tang gia cac phong dang thap hon thi truong, muc tham chieu hien tai khoang ${formatCurrency(business.market.averageRent)}/thang.`)
+  }
+
+  if (business.highPricedRoomCount > 0) {
+    recommendations.push('Kiem tra ty le phong trong va chat luong phong truoc khi giu muc gia cao hon thi truong.')
+  }
+
+  if (business.waterProfit < 0) {
+    recommendations.push('Dieu chinh phi nuoc hoac kiem tra lai hoa don nuoc tong vi tien nuoc dang am.')
+  }
+
+  if (business.serviceProfit < 0) {
+    recommendations.push('Xem tang phi dich vu/phu phi mang-ve sinh neu chi phi khac vuot tong phi dich vu thu duoc.')
+  }
+
+  if (business.electricityProfit < 0) {
+    recommendations.push('Canh bao lo dien: kiem tra don gia, cong to va quy dinh dia phuong; khong tu dong tang gia dien neu co rui ro phap ly.')
+  }
+
+  const abnormalRooms = roomRows.filter(
+    (row) =>
+      (row.previousElectricityUsage && row.electricityUsage > row.previousElectricityUsage * 1.3) ||
+      (row.previousWaterUsage && row.waterUsage > row.previousWaterUsage * 1.3),
+  )
+  if (abnormalRooms.length) {
+    recommendations.push(`Kiem tra phong tieu thu bat thuong: ${abnormalRooms.map((row) => row.room.name).join(', ')}.`)
+  }
+
+  const threshold = toNumber(house.alert_variance_percent || 8)
+  if (
+    (Math.abs(totals.electricityVariancePercent) > threshold && totals.invoiceElectricityKwh > 0) ||
+    (Math.abs(totals.waterVariancePercent) > threshold && totals.invoiceWaterM3 > 0)
+  ) {
+    recommendations.push('Kiem tra lai dong ho tong va cach ghi chi so neu tong phong lech xa hoa don nha nuoc.')
+  }
+
+  if (!recommendations.length) {
+    recommendations.push('Gia phong, phi dich vu va chi phi van hanh dang on dinh. Tiep tuc cap nhat khao sat moi moi thang.')
+  }
+
+  return recommendations
 }

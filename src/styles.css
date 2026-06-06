@@ -1236,3 +1236,120 @@ h2 {
   background: #fbfffd;
   border-color: #cfd9d5;
 }
+
+/* Market survey and business analysis */
+.market-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.market-summary div,
+.comparison-item,
+.recommendation-list article,
+.empty-inline {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.market-summary div {
+  min-width: 0;
+  padding: 10px;
+}
+
+.market-summary span,
+.comparison-item span,
+.comparison-item em {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.market-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.survey-table {
+  min-width: 1280px;
+}
+
+.survey-table th:nth-child(10),
+.survey-table td:nth-child(10) {
+  min-width: 180px;
+}
+
+.business-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.comparison-list,
+.recommendation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.comparison-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+}
+
+.comparison-item.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.comparison-item.notice {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.comparison-item strong {
+  display: block;
+  font-size: 14px;
+}
+
+.recommendation-list article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  padding: 10px;
+  color: #1f3a35;
+  background: #f7fbfa;
+  font-size: 13px;
+}
+
+.empty-inline {
+  margin: 12px 0 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+  .market-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .market-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -33,6 +33,7 @@ import {
 } from './lib/calculations'
 import {
   deleteHouseRecord,
+  deleteMarketSurveyRecord,
   deleteRoomRecord,
   fetchAppTitle,
   fetchCurrentProfile,
@@ -40,6 +41,7 @@ import {
   saveAppTitle,
   saveHouseRecord,
   saveInvoiceRecord,
+  saveMarketSurveyRecord,
   saveReadingRecord,
   saveRoomRecord,
 } from './lib/supabaseData'
@@ -394,6 +396,58 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     })
   }
 
+  async function addMarketSurvey() {
+    if (!permissions.canEdit) return showReadOnlyNotice()
+    const draft = {
+      id: localId('survey'),
+      area: dashboard.house?.address || dashboard.house?.name || '',
+      source: '',
+      room_type: 'Phong tro',
+      room_size_m2: 0,
+      monthly_rent: 0,
+      electric_price: toNumber(dashboard.house?.electricity_rate),
+      water_price: toNumber(dashboard.house?.water_rate),
+      service_fee: 0,
+      internet_fee: 0,
+      note: '',
+      survey_date: new Date().toISOString().slice(0, 10),
+    }
+    await runSave('survey-new', async () => {
+      if (isRemote) {
+        const saved = await saveMarketSurveyRecord(draft)
+        addCollectionItem('marketSurveys', saved)
+        return
+      }
+      addCollectionItem('marketSurveys', draft)
+    }, 'Da them khao sat thi truong.')
+  }
+
+  async function commitMarketSurveyPatch(survey, patch) {
+    const previousData = data
+    const currentSurvey = data.marketSurveys?.find((item) => item.id === survey.id) ?? survey
+    const nextSurvey = { ...currentSurvey, ...patch }
+    patchCollection('marketSurveys', currentSurvey.id, patch)
+    await runSave(`survey-${currentSurvey.id}`, async () => {
+      if (isRemote) {
+        const saved = await saveMarketSurveyRecord(nextSurvey)
+        replaceCollectionItem('marketSurveys', currentSurvey.id, saved)
+      }
+    }, 'Da luu khao sat thi truong.', () => setData(previousData))
+  }
+
+  async function deleteMarketSurvey(survey) {
+    if (!permissions.canDelete) return showReadOnlyNotice()
+    const confirmed = window.confirm(`Xoa khao sat ${survey.area || survey.source || survey.room_type || ''}?`)
+    if (!confirmed) return
+    await runSave(`survey-delete-${survey.id}`, async () => {
+      if (isRemote) await deleteMarketSurveyRecord(survey.id)
+      setData((current) => ({
+        ...current,
+        marketSurveys: (current.marketSurveys ?? []).filter((item) => item.id !== survey.id),
+      }))
+    }, 'Da xoa khao sat thi truong.')
+  }
+
   async function commitInvoicePatch(patch) {
     if (!dashboard.house || !dashboard.invoice) return
     const previousData = data
@@ -452,13 +506,15 @@ function Dashboard({ mode, user, profile, onSignOut }) {
           <EmptyState canEdit={permissions.canEdit} onAddHouse={addHouse} onBlocked={showReadOnlyNotice} saving={savingKey === 'house-new'} />
         ) : (
           <>
-            <MetricStrip totals={dashboard.totals} />
+            <MetricStrip totals={dashboard.totals} business={dashboard.business} />
             <section className="content-grid">
               <div className="primary-column">
                 <HouseSettings house={dashboard.house} permissions={permissions} onCommit={commitHousePatch} onAddHouse={addHouse} onDelete={deleteCurrentHouse} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
                 <RoomReadingsPanel rows={dashboard.roomRows} totals={dashboard.totals} permissions={permissions} onCommitRoom={commitRoomPatch} onDeleteRoom={deleteRoom} onCommitReading={commitReadingPatch} onAddRoom={addRoom} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
+                <MarketSurveyPanel surveys={data.marketSurveys ?? []} business={dashboard.business} permissions={permissions} onAdd={addMarketSurvey} onCommit={commitMarketSurveyPatch} onDelete={deleteMarketSurvey} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
               </div>
               <aside className="side-column">
+                <BusinessInsightsPanel business={dashboard.business} />
                 <InvoicePanel invoice={dashboard.invoice} totals={dashboard.totals} permissions={permissions} onCommit={commitInvoicePatch} onBlocked={showReadOnlyNotice} saving={savingKey === `invoice-${dashboard.invoice.id}`} />
                 <AlertPanel alerts={dashboard.alerts} />
               </aside>
@@ -513,12 +569,20 @@ function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomC
 function RoleBadge({ permissions }) { return <span className={`role-badge role-${permissions.role}`}>{permissions.label}</span> }
 function SaveIndicator({ status }) { return status.state === 'idle' ? null : <span className={`save-indicator ${status.state}`}>{status.message}</span> }
 
-function MetricStrip({ totals }) {
+function MetricStrip({ totals, business }) {
   const metrics = [
-    { label: 'Tổng thu', value: formatCurrency(totals.totalRevenue), hint: 'Tiền phòng + điện nước + phí', icon: CircleDollarSign, tone: 'green' },
-    { label: 'Tổng chi', value: formatCurrency(totals.totalCost), hint: 'Hóa đơn điện nước nhà nước', icon: WalletCards, tone: 'blue' },
-    { label: 'Chênh lệch', value: formatCurrency(totals.difference), hint: `Điện nước: ${formatCurrency(totals.utilityDifference)}`, icon: Gauge, tone: totals.difference >= 0 ? 'teal' : 'red' },
-    { label: 'Chênh lệch/người', value: formatCurrency(totals.differencePerResident), hint: `${formatNumber(totals.residents)} người đang ở`, icon: Users, tone: 'amber' },
+    { label: 'Tong thu', value: formatCurrency(totals.totalRevenue), hint: 'Tien phong + dien nuoc + phi', icon: CircleDollarSign, tone: 'green' },
+    { label: 'Tong chi', value: formatCurrency(totals.totalCost), hint: 'Hoa don dien nuoc nha nuoc', icon: WalletCards, tone: 'blue' },
+    { label: 'Chenh lech', value: formatCurrency(totals.difference), hint: `Dien nuoc: ${formatCurrency(totals.utilityDifference)}`, icon: Gauge, tone: totals.difference >= 0 ? 'teal' : 'red' },
+    { label: 'Bien loi nhuan thang', value: `${formatNumber(business.profitMarginPercent)}%`, hint: 'Loi nhuan / tong thu', icon: Gauge, tone: business.profitMarginPercent >= 0 ? 'green' : 'red' },
+    { label: 'Lai/lo dien', value: formatCurrency(business.electricityProfit), hint: 'Thu dien tru chi phi dien', icon: Zap, tone: business.electricityProfit >= 0 ? 'teal' : 'red' },
+    { label: 'Lai/lo nuoc', value: formatCurrency(business.waterProfit), hint: 'Thu nuoc tru chi phi nuoc', icon: WalletCards, tone: business.waterProfit >= 0 ? 'blue' : 'red' },
+    { label: 'Lai/lo phi dich vu', value: formatCurrency(business.serviceProfit), hint: 'Phi dich vu tru chi phi khac', icon: CircleDollarSign, tone: business.serviceProfit >= 0 ? 'green' : 'red' },
+    { label: 'Gia thue TB nha', value: formatCurrency(business.houseAverageRent), hint: 'Trung binh cac phong hien co', icon: Home, tone: 'amber' },
+    { label: 'Gia thue TB thi truong', value: formatCurrency(business.market.averageRent), hint: `${formatNumber(business.market.count)} mau khao sat`, icon: Building2, tone: 'blue' },
+    { label: 'Phong dinh gia thap', value: formatNumber(business.lowPricedRoomCount), hint: 'Thap hon thi truong >10%', icon: AlertTriangle, tone: business.lowPricedRoomCount ? 'red' : 'green' },
+    { label: 'Canh bao can xu ly', value: formatNumber(business.actionAlertCount), hint: 'Dinh gia + loi lo van hanh', icon: AlertTriangle, tone: business.actionAlertCount ? 'red' : 'green' },
+    { label: 'Chenh lech/ng??i', value: formatCurrency(totals.differencePerResident), hint: `${formatNumber(totals.residents)} nguoi dang o`, icon: Users, tone: 'amber' },
   ]
   return <section className="metric-strip" id="overview">{metrics.map((metric) => { const Icon = metric.icon; return <article className={`metric-card ${metric.tone}`} key={metric.label}><div className="metric-icon"><Icon size={20} /></div><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.hint}</small></article> })}</section>
 }
@@ -604,6 +668,66 @@ function RoomMobileCard({ row, permissions, onCommitRoom, onDeleteRoom, onCommit
     </article>
   )
 }
+function MarketSurveyPanel({ surveys, business, permissions, onAdd, onCommit, onDelete, onBlocked, savingKey }) {
+  return (
+    <section className="panel market-panel" id="market">
+      <div className="panel-heading sticky-actions">
+        <div>
+          <p className="eyeline">Khao sat thi truong</p>
+          <h2>Mat bang gia khu vuc lan can</h2>
+          <span className="sheet-hint">Nhap gia thue, gia dien nuoc va phi tu cac nguon tham khao</span>
+        </div>
+        {permissions.canEdit ? <button className="secondary-button always-visible" type="button" onClick={onAdd}>{savingKey === 'survey-new' ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}Them khao sat</button> : null}
+      </div>
+      <div className="market-summary">
+        <div><span>Gia thue TB</span><strong>{formatCurrency(business.market.averageRent)}</strong></div>
+        <div><span>Thap nhat / cao nhat</span><strong>{formatCurrency(business.market.minRent)} - {formatCurrency(business.market.maxRent)}</strong></div>
+        <div><span>Gia dien TB</span><strong>{formatCurrency(business.market.averageElectricPrice)}</strong></div>
+        <div><span>Gia nuoc TB</span><strong>{formatCurrency(business.market.averageWaterPrice)}</strong></div>
+        <div><span>Phi dich vu TB</span><strong>{formatCurrency(business.market.averageServiceFee)}</strong></div>
+      </div>
+      <div className="table-wrap spreadsheet-wrap survey-wrap">
+        <table className="data-table spreadsheet-table survey-table">
+          <thead><tr><th>Khu vuc</th><th>Nguon</th><th>Loai phong</th><th>Dien tich</th><th>Gia thue</th><th>Gia dien</th><th>Gia nuoc</th><th>Phi DV</th><th>Phi mang</th><th>Ghi chu</th>{permissions.canDelete ? <th></th> : null}</tr></thead>
+          <tbody>{surveys.map((survey) => <tr key={survey.id}>
+            <td><EditableCell value={survey.area} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { area: value })} /></td>
+            <td><EditableCell value={survey.source} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { source: value })} /></td>
+            <td><EditableCell value={survey.room_type} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { room_type: value })} /></td>
+            <td><EditableCell type="number" value={survey.room_size_m2} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { room_size_m2: value })} helper="m2" /></td>
+            <td><EditableCell type="number" value={survey.monthly_rent} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { monthly_rent: value })} /></td>
+            <td><EditableCell type="number" value={survey.electric_price} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { electric_price: value })} /></td>
+            <td><EditableCell type="number" value={survey.water_price} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { water_price: value })} /></td>
+            <td><EditableCell type="number" value={survey.service_fee} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { service_fee: value })} /></td>
+            <td><EditableCell type="number" value={survey.internet_fee} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { internet_fee: value })} /></td>
+            <td><EditableCell value={survey.note} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit(survey, { note: value })} /></td>
+            {permissions.canDelete ? <td className="row-actions"><IconButton label="Xoa khao sat" onClick={() => onDelete(survey)}><Trash2 size={16} /></IconButton></td> : null}
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {!surveys.length ? <p className="empty-inline">Chua co mau khao sat. Them du lieu de bat dau so sanh gia.</p> : null}
+    </section>
+  )
+}
+
+function BusinessInsightsPanel({ business }) {
+  return (
+    <section className="panel business-panel">
+      <div className="panel-heading compact"><div><p className="eyeline">Phan tich kinh doanh</p><h2>De xuat cai thien</h2></div><Gauge size={20} /></div>
+      <div className="comparison-list">
+        {business.roomComparisons.slice(0, 6).map((item) => (
+          <article className={`comparison-item ${item.isLowMarketRent || item.isLowRevenuePerResident ? 'warning' : item.isHighMarketRent ? 'notice' : ''}`} key={item.room.id}>
+            <div><strong>{item.room.name}</strong><span>{formatCurrency(item.rent)} / thang</span></div>
+            <em>{business.market.averageRent ? `Lech thi truong ${formatNumber(item.marketDeltaPercent)}%` : 'Chua co du lieu thi truong'}</em>
+          </article>
+        ))}
+      </div>
+      <div className="recommendation-list">
+        {business.recommendations.map((item, index) => <article key={`rec-${index}`}><CheckCircle2 size={16} /><span>{item}</span></article>)}
+      </div>
+    </section>
+  )
+}
+
 function InvoicePanel({ invoice, totals, permissions, onCommit, onBlocked, saving }) {
   if (!invoice) return null
   return (

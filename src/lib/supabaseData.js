@@ -7,6 +7,7 @@ const TABLES = {
   readings: 'room_meter_readings',
   invoices: 'state_invoices',
   settings: 'app_settings',
+  marketSurveys: 'market_surveys',
 }
 
 export async function fetchCurrentProfile(userId) {
@@ -21,7 +22,7 @@ export async function fetchCurrentProfile(userId) {
 }
 
 export async function fetchDashboardData() {
-  const [houses, rooms, readings, invoices] = await Promise.all([
+  const [houses, rooms, readings, invoices, marketSurveys] = await Promise.all([
     supabase.from(TABLES.houses).select('*').order('created_at', { ascending: true }),
     supabase
       .from(TABLES.rooms)
@@ -38,6 +39,12 @@ export async function fetchDashboardData() {
       .select('*')
       .order('month', { ascending: false })
       .limit(1000),
+    supabase
+      .from(TABLES.marketSurveys)
+      .select('*')
+      .order('survey_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(2000),
   ])
 
   for (const response of [houses, rooms, readings, invoices]) {
@@ -46,11 +53,16 @@ export async function fetchDashboardData() {
     }
   }
 
+  if (marketSurveys.error && !isMissingTableError(marketSurveys.error, TABLES.marketSurveys)) {
+    throw marketSurveys.error
+  }
+
   return {
     houses: houses.data ?? [],
     rooms: rooms.data ?? [],
     readings: readings.data ?? [],
     invoices: invoices.data ?? [],
+    marketSurveys: marketSurveys.error ? [] : marketSurveys.data ?? [],
   }
 }
 
@@ -75,6 +87,32 @@ export async function saveAppTitle(value) {
 
   if (error) throw error
   return data?.value || nextTitle
+}
+
+export async function saveMarketSurveyRecord(survey) {
+  const payload = stripLocalId({
+    id: survey.id,
+    area: survey.area ?? '',
+    source: survey.source ?? '',
+    room_type: survey.room_type ?? '',
+    room_size_m2: numberOrZero(survey.room_size_m2),
+    monthly_rent: numberOrZero(survey.monthly_rent),
+    electric_price: numberOrZero(survey.electric_price),
+    water_price: numberOrZero(survey.water_price),
+    service_fee: numberOrZero(survey.service_fee),
+    internet_fee: numberOrZero(survey.internet_fee),
+    note: survey.note ?? '',
+    survey_date: survey.survey_date || new Date().toISOString().slice(0, 10),
+  })
+
+  const { data, error } = await supabase.from(TABLES.marketSurveys).upsert(payload).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteMarketSurveyRecord(id) {
+  const { error } = await supabase.from(TABLES.marketSurveys).delete().eq('id', id)
+  if (error) throw error
 }
 
 export async function saveHouseRecord(house) {
@@ -188,6 +226,11 @@ function stripLocalId(payload) {
     return rest
   }
   return payload
+}
+
+function isMissingTableError(error, tableName) {
+  const message = String(error?.message ?? '').toLowerCase()
+  return error?.code === 'PGRST205' || (message.includes(tableName) && message.includes('schema cache'))
 }
 
 function numberOrZero(value) {

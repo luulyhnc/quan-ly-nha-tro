@@ -19,6 +19,24 @@ create table if not exists public.app_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.market_surveys (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid default auth.uid() references auth.users(id) on delete cascade,
+  area text,
+  source text,
+  room_type text,
+  room_size_m2 numeric default 0,
+  monthly_rent numeric default 0,
+  electric_price numeric default 0,
+  water_price numeric default 0,
+  service_fee numeric default 0,
+  internet_fee numeric default 0,
+  note text,
+  survey_date date default current_date,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table if not exists public.houses (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -275,6 +293,9 @@ create unique index if not exists state_invoices_house_month_uidx on public.stat
 create index if not exists profiles_role_idx on public.profiles(role);
 create index if not exists profiles_email_idx on public.profiles(email);
 create index if not exists app_settings_updated_at_idx on public.app_settings(updated_at);
+create index if not exists market_surveys_owner_id_idx on public.market_surveys(owner_id);
+create index if not exists market_surveys_area_idx on public.market_surveys(area);
+create index if not exists market_surveys_survey_date_idx on public.market_surveys(survey_date);
 create index if not exists houses_owner_id_idx on public.houses(owner_id);
 create index if not exists rooms_house_id_idx on public.rooms(house_id);
 create index if not exists readings_house_id_idx on public.room_meter_readings(house_id);
@@ -395,6 +416,11 @@ create trigger set_app_settings_updated_at
 before update on public.app_settings
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_market_surveys_updated_at on public.market_surveys;
+create trigger set_market_surveys_updated_at
+before update on public.market_surveys
+for each row execute function public.set_updated_at();
+
 drop trigger if exists set_houses_updated_at on public.houses;
 create trigger set_houses_updated_at
 before update on public.houses
@@ -422,6 +448,7 @@ for each row execute function public.handle_new_user();
 
 alter table public.profiles enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.market_surveys enable row level security;
 alter table public.houses enable row level security;
 alter table public.rooms enable row level security;
 alter table public.room_meter_readings enable row level security;

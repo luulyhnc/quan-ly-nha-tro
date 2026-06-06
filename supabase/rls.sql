@@ -79,6 +79,7 @@ grant execute on function public.current_user_can_delete() to authenticated;
 
 alter table public.profiles enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.market_surveys enable row level security;
 alter table public.houses enable row level security;
 alter table public.rooms enable row level security;
 alter table public.room_meter_readings enable row level security;
@@ -87,6 +88,7 @@ alter table public.state_invoices enable row level security;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.profiles to authenticated;
 grant select, insert, update, delete on public.app_settings to authenticated;
+grant select, insert, update, delete on public.market_surveys to authenticated;
 grant select, insert, update, delete on public.houses to authenticated;
 grant select, insert, update, delete on public.rooms to authenticated;
 grant select, insert, update, delete on public.room_meter_readings to authenticated;
@@ -106,6 +108,11 @@ drop policy if exists app_settings_select_authenticated on public.app_settings;
 drop policy if exists app_settings_insert_owner on public.app_settings;
 drop policy if exists app_settings_update_owner on public.app_settings;
 drop policy if exists app_settings_delete_owner on public.app_settings;
+
+drop policy if exists market_surveys_select_authenticated on public.market_surveys;
+drop policy if exists market_surveys_insert_owner on public.market_surveys;
+drop policy if exists market_surveys_update_owner on public.market_surveys;
+drop policy if exists market_surveys_delete_owner on public.market_surveys;
 
 drop policy if exists "owners manage houses" on public.houses;
 drop policy if exists houses_admin_all on public.houses;
@@ -188,6 +195,39 @@ with check (public.current_user_is_owner());
 
 create policy app_settings_delete_owner
 on public.app_settings
+for delete
+to authenticated
+using (public.current_user_is_owner());
+
+-- market_surveys: authenticated users can view; only owner can change survey data.
+create policy market_surveys_select_authenticated
+on public.market_surveys
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role in ('owner', 'admin', 'viewer')
+  )
+);
+
+create policy market_surveys_insert_owner
+on public.market_surveys
+for insert
+to authenticated
+with check (public.current_user_is_owner());
+
+create policy market_surveys_update_owner
+on public.market_surveys
+for update
+to authenticated
+using (public.current_user_is_owner())
+with check (public.current_user_is_owner());
+
+create policy market_surveys_delete_owner
+on public.market_surveys
 for delete
 to authenticated
 using (public.current_user_is_owner());
