@@ -85,7 +85,14 @@ code {
   gap: 12px;
 }
 
-.brand-lockup strong {
+.brand-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.brand-lockup strong,
+.sidebar-title-text {
   display: block;
   color: var(--text);
   font-size: 15px;
@@ -1191,6 +1198,38 @@ h2 {
 
 .inline-edit-input.app-title-inline {
   padding-left: 9px;
+}
+
+.sidebar-title-inline {
+  width: auto;
+  max-width: 100%;
+  min-height: 26px;
+  border-radius: 5px;
+  padding: 0 5px 0 0;
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.inline-edit-display.sidebar-title-inline.can-edit {
+  position: relative;
+  padding-right: 22px;
+}
+
+.inline-edit-display.sidebar-title-inline.can-edit:hover::after {
+  content: "\270e";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  color: var(--teal-dark);
+  font-size: 12px;
+  transform: translateY(-50%);
+}
+
+.inline-edit-input.sidebar-title-inline {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 7px;
 }
 
 .compact-inline-field {

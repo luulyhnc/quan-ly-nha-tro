@@ -410,7 +410,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
   return (
     <div className="app-shell">
-      <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} houseCount={data.houses.length} roomCount={data.rooms.length} onSignOut={onSignOut} />
+      <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} houseCount={data.houses.length} roomCount={data.rooms.length} onSaveAppTitle={commitAppTitle} onSignOut={onSignOut} />
       <main className="workspace">
         <header className="topbar">
           <div className="title-block">
@@ -474,10 +474,26 @@ function getPermissions(mode, profile) {
   const role = mode === 'supabase' ? profile?.role || 'viewer' : 'owner'
   return { role, label: ROLE_LABELS[role] ?? 'Chỉ xem', canEdit: role === 'owner', canDelete: role === 'owner' }
 }
-function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomCount, onSignOut }) {
+function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomCount, onSaveAppTitle, onSignOut }) {
   return (
     <aside className="sidebar">
-      <div className="brand-lockup"><div className="brand-mark"><Home size={24} /></div><div><strong>{appTitle}</strong><span>{mode === 'supabase' ? 'Supabase Auth' : 'Demo local'}</span></div></div>
+      <div className="brand-lockup">
+        <div className="brand-mark"><Home size={24} /></div>
+        <div className="brand-copy">
+          {permissions.canEdit ? (
+            <InlineEditableField
+              value={appTitle}
+              canEdit={permissions.canEdit}
+              onSave={onSaveAppTitle}
+              placeholder={DEFAULT_APP_TITLE}
+              className="sidebar-title-inline"
+            />
+          ) : (
+            <strong className="sidebar-title-text">{appTitle}</strong>
+          )}
+          <span>{mode === 'supabase' ? 'Supabase Auth' : 'Demo local'}</span>
+        </div>
+      </div>
       <nav className="nav-list" aria-label="Dashboard">
         <a className="active" href="#overview"><Gauge size={17} />Tổng quan</a>
         <a href="#readings"><Zap size={17} />Chỉ số điện nước</a>
