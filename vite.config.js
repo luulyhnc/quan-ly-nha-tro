@@ -3,5 +3,5 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/quan-ly-nha-tro/',
+  base: process.env.VITE_BASE_PATH || '/quan-ly-nha-tro/',
 })
