@@ -1125,3 +1125,62 @@ h2 {
     width: 100%;
   }
 }
+/* Inline house editing */
+.house-title-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inline-edit-display,
+.inline-edit-input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  outline: none;
+}
+
+.inline-edit-display {
+  cursor: pointer;
+}
+
+.inline-edit-display.can-edit:hover {
+  border-color: #8fcfc5;
+  background: #f0fdfa;
+}
+
+.inline-edit-display.read-only {
+  cursor: not-allowed;
+  color: #4b5563;
+  background: #f8fafc;
+  border-color: #e5e7eb;
+}
+
+.inline-edit-input {
+  border-color: var(--teal);
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.14);
+}
+
+.house-title-inline {
+  min-height: 44px;
+  padding-left: 0;
+  font-size: 22px;
+  font-weight: 780;
+  line-height: 1.12;
+}
+
+.inline-edit-input.house-title-inline {
+  padding-left: 9px;
+}
+
+.compact-inline-field {
+  background: #fbfffd;
+  border-color: #cfd9d5;
+}

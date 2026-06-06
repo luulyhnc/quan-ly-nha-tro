@@ -488,18 +488,29 @@ function HouseSettings({ house, permissions, onCommit, onAddHouse, onDelete, onB
   return (
     <section className="panel house-panel">
       <div className="panel-heading sticky-actions">
-        <div><p className="eyeline">Quản lý nhà</p><h2>{house.name}</h2><span className="sheet-hint">Click vào ô để sửa, Enter để lưu, Esc để hủy</span></div>
+        <div className="house-title-block">
+          <p className="eyeline">Quản lý nhà</p>
+          <InlineEditableField
+            value={house.name}
+            canEdit={permissions.canEdit}
+            onSave={(value) => onCommit({ name: value })}
+            placeholder="Tên nhà"
+            className="house-title-inline"
+            onBlocked={onBlocked}
+          />
+          <span className="sheet-hint">Click vào ô để sửa, Enter để lưu, Esc để hủy</span>
+        </div>
         <div className="button-row">
           {permissions.canEdit ? <button className="secondary-button" type="button" onClick={onAddHouse}>{savingKey === 'house-new' ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}Thêm nhà</button> : null}
           {permissions.canDelete ? <IconButton label="Xóa nhà" onClick={onDelete}><Trash2 size={17} /></IconButton> : null}
         </div>
       </div>
       <div className="settings-grid sheet-settings">
-        <EditableField label="Tên nhà" value={house.name} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit({ name: value })} />
-        <EditableField label="Địa chỉ" value={house.address} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit({ address: value })} />
-        <EditableField label="Giá điện thu/kWh" type="number" value={house.electricity_rate} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit({ electricity_rate: value })} />
-        <EditableField label="Giá nước thu/m3" type="number" value={house.water_rate} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit({ water_rate: value })} />
-        <EditableField label="Ngưỡng cảnh báo %" type="number" value={house.alert_variance_percent} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommit({ alert_variance_percent: value })} />
+        <label className="field editable-field"><span>Tên nhà</span><InlineEditableField value={house.name} canEdit={permissions.canEdit} onSave={(value) => onCommit({ name: value })} placeholder="Tên nhà" onBlocked={onBlocked} /></label>
+        <label className="field editable-field"><span>Địa chỉ</span><InlineEditableField value={house.address} canEdit={permissions.canEdit} onSave={(value) => onCommit({ address: value })} placeholder="Địa chỉ" onBlocked={onBlocked} /></label>
+        <label className="field editable-field"><span>Giá điện thu/kWh</span><InlineEditableField type="number" value={house.electricity_rate} canEdit={permissions.canEdit} onSave={(value) => onCommit({ electricity_rate: value })} placeholder="0" onBlocked={onBlocked} /></label>
+        <label className="field editable-field"><span>Giá nước thu/m3</span><InlineEditableField type="number" value={house.water_rate} canEdit={permissions.canEdit} onSave={(value) => onCommit({ water_rate: value })} placeholder="0" onBlocked={onBlocked} /></label>
+        <label className="field editable-field"><span>Ngưỡng cảnh báo %</span><InlineEditableField type="number" value={house.alert_variance_percent} canEdit={permissions.canEdit} onSave={(value) => onCommit({ alert_variance_percent: value })} placeholder="8" onBlocked={onBlocked} /></label>
       </div>
     </section>
   )
@@ -595,7 +606,110 @@ function EmptyState({ canEdit, onAddHouse, onBlocked, saving }) {
 }
 
 function EditableField({ label, value, type = 'text', canEdit, onCommit, onBlocked }) {
-  return <label className="field editable-field"><span>{label}</span><EditableCell value={value} type={type} canEdit={canEdit} onCommit={onCommit} onBlocked={onBlocked} /></label>
+  return (
+    <label className="field editable-field">
+      <span>{label}</span>
+      <InlineEditableField
+        value={value}
+        type={type}
+        canEdit={canEdit}
+        onSave={onCommit}
+        placeholder={label}
+        className="compact-inline-field"
+        onBlocked={onBlocked}
+      />
+    </label>
+  )
+}
+
+function InlineEditableField({
+  value,
+  type = 'text',
+  canEdit,
+  onSave,
+  placeholder,
+  className = '',
+  onBlocked,
+}) {
+  const [isEditing, setIsEditing] = useState(false)
+  const [draft, setDraft] = useState(formatDraftValue(value, type))
+  const inputRef = useRef(null)
+  const cancelRef = useRef(false)
+
+  useEffect(() => {
+    if (!isEditing) setDraft(formatDraftValue(value, type))
+  }, [isEditing, type, value])
+
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus()
+  }, [isEditing])
+
+  const displayValue = type === 'number' ? formatNumber(value) : value || placeholder || '-'
+  const tooltip = canEdit ? 'Click để sửa' : 'Chỉ chủ sở hữu được sửa'
+
+  function beginEdit() {
+    if (!canEdit) {
+      onBlocked?.()
+      return
+    }
+    cancelRef.current = false
+    setDraft(formatDraftValue(value, type))
+    setIsEditing(true)
+  }
+
+  function commit() {
+    if (cancelRef.current) {
+      cancelRef.current = false
+      setDraft(formatDraftValue(value, type))
+      setIsEditing(false)
+      return
+    }
+
+    const nextValue = type === 'number' ? toNumber(draft) : draft.trim()
+    const currentValue = type === 'number' ? toNumber(value) : String(value ?? '')
+    const changed = type === 'number' ? nextValue !== currentValue : nextValue !== currentValue
+
+    setIsEditing(false)
+    if (changed) onSave(nextValue)
+  }
+
+  if (isEditing) {
+    return (
+      <input
+        ref={inputRef}
+        className={`inline-edit-input ${className}`}
+        type={type === 'number' ? 'number' : 'text'}
+        inputMode={type === 'number' ? 'decimal' : undefined}
+        min={type === 'number' ? '0' : undefined}
+        value={draft}
+        placeholder={placeholder}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            event.currentTarget.blur()
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            cancelRef.current = true
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    )
+  }
+
+  return (
+    <button
+      className={`inline-edit-display ${className} ${canEdit ? 'can-edit' : 'read-only'}`}
+      type="button"
+      title={tooltip}
+      onClick={beginEdit}
+    >
+      {displayValue}
+    </button>
+  )
 }
 
 function EditableCell({ value, type = 'text', canEdit, onCommit, onBlocked, helper, strong }) {
