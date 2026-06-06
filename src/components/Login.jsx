@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { Home, Loader2, ShieldCheck } from 'lucide-react'
+import { DEFAULT_APP_TITLE } from '../lib/appSettings'
 import { supabase } from '../lib/supabase'
 
 const COPY = {
-  brand: 'Nh\u00e0 tr\u1ecd Manager',
+  brand: DEFAULT_APP_TITLE,
   subtitle: 'Static React + Supabase Free',
   heading: 'Qu\u1ea3n l\u00fd \u0111i\u1ec7n n\u01b0\u1edbc v\u00e0 d\u00f2ng ti\u1ec1n nh\u00e0 tr\u1ecd',
   loginLabel: '\u0110\u0103ng nh\u1eadp qu\u1ea3n tr\u1ecb',
   signIn: '\u0110\u0103ng nh\u1eadp',
   signUp: 'T\u1ea1o t\u00e0i kho\u1ea3n',
   password: 'M\u1eadt kh\u1ea9u',
-  created: 'T\u00e0i kho\u1ea3n \u0111\u00e3 \u0111\u01b0\u1ee3c t\u1ea1o. H\u00e3y set role admin trong Supabase SQL Editor tr\u01b0\u1edbc khi v\u00e0o dashboard.',
+  created: 'T\u00e0i kho\u1ea3n \u0111\u00e3 \u0111\u01b0\u1ee3c t\u1ea1o. H\u00e3y set role owner trong Supabase SQL Editor tr\u01b0\u1edbc khi v\u00e0o dashboard.',
 }
 
 export default function Login() {

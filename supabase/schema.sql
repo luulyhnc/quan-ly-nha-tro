@@ -13,6 +13,12 @@ create table if not exists public.profiles (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.app_settings (
+  key text primary key,
+  value text,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.houses (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -102,6 +108,13 @@ alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check check (role in ('owner', 'admin', 'viewer'));
 alter table public.profiles add column if not exists created_at timestamptz not null default now();
 alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+
+alter table public.app_settings add column if not exists value text;
+alter table public.app_settings add column if not exists updated_at timestamptz not null default now();
+
+insert into public.app_settings (key, value)
+values ('app_title', 'Nhà trọ Manager')
+on conflict (key) do nothing;
 
 alter table public.houses add column if not exists owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade;
 alter table public.houses add column if not exists name text;
@@ -261,6 +274,7 @@ create unique index if not exists state_invoices_house_month_uidx on public.stat
 
 create index if not exists profiles_role_idx on public.profiles(role);
 create index if not exists profiles_email_idx on public.profiles(email);
+create index if not exists app_settings_updated_at_idx on public.app_settings(updated_at);
 create index if not exists houses_owner_id_idx on public.houses(owner_id);
 create index if not exists rooms_house_id_idx on public.rooms(house_id);
 create index if not exists readings_house_id_idx on public.room_meter_readings(house_id);
@@ -305,7 +319,7 @@ language plpgsql
 security definer
 stable
 set search_path = public
-as $
+as $$
 begin
   return exists (
     select 1
@@ -314,7 +328,7 @@ begin
       and role = 'owner'
   );
 end;
-$;
+$$;
 
 create or replace function public.current_user_is_admin()
 returns boolean
@@ -322,7 +336,7 @@ language plpgsql
 security definer
 stable
 set search_path = public
-as $
+as $$
 begin
   return exists (
     select 1
@@ -331,7 +345,7 @@ begin
       and role = 'admin'
   );
 end;
-$;
+$$;
 
 create or replace function public.current_user_can_edit()
 returns boolean
@@ -339,7 +353,7 @@ language plpgsql
 security definer
 stable
 set search_path = public
-as $
+as $$
 begin
   return exists (
     select 1
@@ -348,7 +362,7 @@ begin
       and role in ('owner', 'admin')
   );
 end;
-$;
+$$;
 
 create or replace function public.current_user_can_delete()
 returns boolean
@@ -356,11 +370,11 @@ language plpgsql
 security definer
 stable
 set search_path = public
-as $
+as $$
 begin
   return public.current_user_is_owner();
 end;
-$;
+$$;
 
 revoke all on function public.current_user_is_owner() from public;
 revoke all on function public.current_user_is_admin() from public;
@@ -374,6 +388,11 @@ grant execute on function public.current_user_can_delete() to authenticated;
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_app_settings_updated_at on public.app_settings;
+create trigger set_app_settings_updated_at
+before update on public.app_settings
 for each row execute function public.set_updated_at();
 
 drop trigger if exists set_houses_updated_at on public.houses;
@@ -402,6 +421,7 @@ after insert on auth.users
 for each row execute function public.handle_new_user();
 
 alter table public.profiles enable row level security;
+alter table public.app_settings enable row level security;
 alter table public.houses enable row level security;
 alter table public.rooms enable row level security;
 alter table public.room_meter_readings enable row level security;

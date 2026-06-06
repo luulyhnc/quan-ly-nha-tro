@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import Login from './components/Login'
 import ProtectedRoute from './components/ProtectedRoute'
+import { DEFAULT_APP_TITLE } from './lib/appSettings'
 import { hasSupabaseConfig, isSupabaseConfigured, supabase, supabaseConfigError } from './lib/supabase'
 import { sampleData } from './lib/sampleData'
 import {
@@ -33,8 +34,10 @@ import {
 import {
   deleteHouseRecord,
   deleteRoomRecord,
+  fetchAppTitle,
   fetchCurrentProfile,
   fetchDashboardData,
+  saveAppTitle,
   saveHouseRecord,
   saveInvoiceRecord,
   saveReadingRecord,
@@ -146,6 +149,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   const [saveStatus, setSaveStatus] = useState({ state: 'idle', message: '' })
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
+  const [appTitle, setAppTitle] = useState(DEFAULT_APP_TITLE)
 
   const isRemote = mode === 'supabase'
   const permissions = useMemo(() => getPermissions(mode, profile), [mode, profile])
@@ -159,8 +163,9 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     setLoading(true)
     setError('')
     try {
-      const nextData = await fetchDashboardData()
+      const [nextData, nextTitle] = await Promise.all([fetchDashboardData(), fetchAppTitle()])
       setData(nextData)
+      setAppTitle(nextTitle)
       setSelectedHouseId((current) => current || nextData.houses[0]?.id || '')
     } catch (nextError) {
       setError(nextError.message)
@@ -232,6 +237,18 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
   function addCollectionItem(collection, item) {
     setData((current) => ({ ...current, [collection]: [...current[collection], item] }))
+  }
+
+  async function commitAppTitle(value) {
+    const nextTitle = String(value ?? '').trim() || DEFAULT_APP_TITLE
+    const previousTitle = appTitle
+    setAppTitle(nextTitle)
+    await runSave('app-title', async () => {
+      if (isRemote) {
+        const savedTitle = await saveAppTitle(nextTitle)
+        setAppTitle(savedTitle)
+      }
+    }, isRemote ? 'Đã lưu tên hệ thống.' : 'Đã lưu tên hệ thống trong demo local.', () => setAppTitle(previousTitle))
   }
 
   async function addHouse() {
@@ -393,14 +410,21 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
   return (
     <div className="app-shell">
-      <Sidebar mode={mode} user={user} profile={profile} permissions={permissions} houseCount={data.houses.length} roomCount={data.rooms.length} onSignOut={onSignOut} />
+      <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} houseCount={data.houses.length} roomCount={data.rooms.length} onSignOut={onSignOut} />
       <main className="workspace">
         <header className="topbar">
           <div className="title-block">
             <RoleBadge permissions={permissions} />
             <p className="eyeline">Dashboard vận hành</p>
-            <h1>Nhà trọ Manager</h1>
-            <span className="sheet-hint">Click vào ô để sửa</span>
+            <InlineEditableField
+              value={appTitle}
+              canEdit={permissions.canEdit}
+              onSave={commitAppTitle}
+              placeholder={DEFAULT_APP_TITLE}
+              className="app-title-inline"
+              onBlocked={showReadOnlyNotice}
+            />
+            {permissions.canEdit ? <span className="sheet-hint">Click vào tiêu đề để sửa</span> : null}
           </div>
           <div className="topbar-controls">
             <SaveIndicator status={saveStatus} />
@@ -450,10 +474,10 @@ function getPermissions(mode, profile) {
   const role = mode === 'supabase' ? profile?.role || 'viewer' : 'owner'
   return { role, label: ROLE_LABELS[role] ?? 'Chỉ xem', canEdit: role === 'owner', canDelete: role === 'owner' }
 }
-function Sidebar({ mode, user, profile, permissions, houseCount, roomCount, onSignOut }) {
+function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomCount, onSignOut }) {
   return (
     <aside className="sidebar">
-      <div className="brand-lockup"><div className="brand-mark"><Home size={24} /></div><div><strong>Nhà trọ Manager</strong><span>{mode === 'supabase' ? 'Supabase Auth' : 'Demo local'}</span></div></div>
+      <div className="brand-lockup"><div className="brand-mark"><Home size={24} /></div><div><strong>{appTitle}</strong><span>{mode === 'supabase' ? 'Supabase Auth' : 'Demo local'}</span></div></div>
       <nav className="nav-list" aria-label="Dashboard">
         <a className="active" href="#overview"><Gauge size={17} />Tổng quan</a>
         <a href="#readings"><Zap size={17} />Chỉ số điện nước</a>

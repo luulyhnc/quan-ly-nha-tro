@@ -872,7 +872,8 @@ h2 {
 }
 
 @media (max-width: 560px) {
-  h1 {
+  h1,
+  .app-title-inline {
     font-size: 24px;
   }
 
@@ -1177,6 +1178,18 @@ h2 {
 }
 
 .inline-edit-input.house-title-inline {
+  padding-left: 9px;
+}
+
+.app-title-inline {
+  min-height: 42px;
+  padding-left: 0;
+  font-size: 30px;
+  font-weight: 780;
+  line-height: 1.12;
+}
+
+.inline-edit-input.app-title-inline {
   padding-left: 9px;
 }
 

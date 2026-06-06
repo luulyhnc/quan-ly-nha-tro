@@ -44,7 +44,7 @@ Tat ca bang deu bat Row Level Security. Du lieu moi gan voi `auth.uid()` cua use
 
 ## Admin Auth va phan quyen
 
-Khi chua cau hinh Supabase env, app van chay demo local. Khi da co `VITE_SUPABASE_URL` va `VITE_SUPABASE_ANON_KEY`, app bat buoc dang nhap bang Supabase Auth va chi user co `profiles.role = admin` moi vao duoc dashboard.
+Khi chua cau hinh Supabase env, app van chay demo local. Khi da co `VITE_SUPABASE_URL` va `VITE_SUPABASE_ANON_KEY`, app bat buoc dang nhap bang Supabase Auth. Role `owner` co quyen sua/xoa va doi ten he thong; `admin` duoc xem/ho tro quan ly; `viewer` chi xem.
 
 Chay SQL moi nhat:
 
@@ -56,12 +56,12 @@ Chay SQL moi nhat:
 -- supabase/rls.sql
 ```
 
-Sau khi tao/dang ky tai khoan admin bang man hinh Login, vao Supabase SQL Editor va set role:
+Sau khi tao/dang ky tai khoan chu so huu bang man hinh Login, vao Supabase SQL Editor va set role:
 
 ```sql
 update public.profiles
-set role = 'admin'
-where email = 'your-admin-email@example.com';
+set role = 'owner'
+where email = 'your-owner-email@example.com';
 ```
 
 Khong dua service role key vao frontend. Frontend chi duoc dung anon public key qua `VITE_SUPABASE_ANON_KEY`; bao mat du lieu dua vao Supabase Auth + RLS.

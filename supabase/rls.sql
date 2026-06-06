@@ -78,6 +78,7 @@ grant execute on function public.current_user_can_edit() to authenticated;
 grant execute on function public.current_user_can_delete() to authenticated;
 
 alter table public.profiles enable row level security;
+alter table public.app_settings enable row level security;
 alter table public.houses enable row level security;
 alter table public.rooms enable row level security;
 alter table public.room_meter_readings enable row level security;
@@ -85,6 +86,7 @@ alter table public.state_invoices enable row level security;
 
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.app_settings to authenticated;
 grant select, insert, update, delete on public.houses to authenticated;
 grant select, insert, update, delete on public.rooms to authenticated;
 grant select, insert, update, delete on public.room_meter_readings to authenticated;
@@ -99,6 +101,11 @@ drop policy if exists profiles_admin_update on public.profiles;
 drop policy if exists profiles_select_self on public.profiles;
 drop policy if exists profiles_owner_admin_select_all on public.profiles;
 drop policy if exists profiles_owner_update_all on public.profiles;
+
+drop policy if exists app_settings_select_authenticated on public.app_settings;
+drop policy if exists app_settings_insert_owner on public.app_settings;
+drop policy if exists app_settings_update_owner on public.app_settings;
+drop policy if exists app_settings_delete_owner on public.app_settings;
 
 drop policy if exists "owners manage houses" on public.houses;
 drop policy if exists houses_admin_all on public.houses;
@@ -158,6 +165,32 @@ for update
 to authenticated
 using (public.current_user_is_owner())
 with check (public.current_user_is_owner());
+
+-- app_settings: all signed-in users can read; only owner can change settings.
+create policy app_settings_select_authenticated
+on public.app_settings
+for select
+to authenticated
+using (auth.uid() is not null);
+
+create policy app_settings_insert_owner
+on public.app_settings
+for insert
+to authenticated
+with check (public.current_user_is_owner());
+
+create policy app_settings_update_owner
+on public.app_settings
+for update
+to authenticated
+using (public.current_user_is_owner())
+with check (public.current_user_is_owner());
+
+create policy app_settings_delete_owner
+on public.app_settings
+for delete
+to authenticated
+using (public.current_user_is_owner());
 
 -- houses
 create policy houses_select_authenticated

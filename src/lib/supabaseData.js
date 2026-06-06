@@ -1,3 +1,4 @@
+import { DEFAULT_APP_TITLE, APP_TITLE_KEY } from './appSettings'
 import { supabase } from './supabase'
 
 const TABLES = {
@@ -5,6 +6,7 @@ const TABLES = {
   rooms: 'rooms',
   readings: 'room_meter_readings',
   invoices: 'state_invoices',
+  settings: 'app_settings',
 }
 
 export async function fetchCurrentProfile(userId) {
@@ -50,6 +52,29 @@ export async function fetchDashboardData() {
     readings: readings.data ?? [],
     invoices: invoices.data ?? [],
   }
+}
+
+export async function fetchAppTitle() {
+  const { data, error } = await supabase
+    .from(TABLES.settings)
+    .select('value')
+    .eq('key', APP_TITLE_KEY)
+    .maybeSingle()
+
+  if (error) throw error
+  return data?.value || DEFAULT_APP_TITLE
+}
+
+export async function saveAppTitle(value) {
+  const nextTitle = String(value ?? '').trim() || DEFAULT_APP_TITLE
+  const { data, error } = await supabase
+    .from(TABLES.settings)
+    .upsert({ key: APP_TITLE_KEY, value: nextTitle }, { onConflict: 'key' })
+    .select('value')
+    .single()
+
+  if (error) throw error
+  return data?.value || nextTitle
 }
 
 export async function saveHouseRecord(house) {
