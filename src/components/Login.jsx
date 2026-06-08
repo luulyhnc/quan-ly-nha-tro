@@ -11,7 +11,7 @@ const COPY = {
   signIn: '\u0110\u0103ng nh\u1eadp',
   signUp: 'T\u1ea1o t\u00e0i kho\u1ea3n',
   password: 'M\u1eadt kh\u1ea9u',
-  created: 'T\u00e0i kho\u1ea3n \u0111\u00e3 \u0111\u01b0\u1ee3c t\u1ea1o. H\u00e3y set role owner trong Supabase SQL Editor tr\u01b0\u1edbc khi v\u00e0o dashboard.',
+  created: 'T\u00e0i kho\u1ea3n \u0111\u00e3 \u0111\u01b0\u1ee3c t\u1ea1o. Vui l\u00f2ng ch\u1edd ch\u1ee7 s\u1edf h\u1eefu c\u1ea5p quy\u1ec1n.',
 }
 
 export default function Login() {
@@ -34,6 +34,9 @@ export default function Login() {
     if (error) {
       setMessage(error.message)
     } else if (mode === 'sign-up') {
+      await supabase.auth.signOut()
+      setMode('sign-in')
+      setPassword('')
       setMessage(COPY.created)
     }
 
@@ -59,7 +62,7 @@ export default function Login() {
           </div>
           <div>
             <span>Role</span>
-            <strong>admin</strong>
+            <strong>owner</strong>
           </div>
           <div>
             <span>Deploy</span>

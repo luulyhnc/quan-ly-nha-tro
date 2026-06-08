@@ -2,12 +2,39 @@ import { DEFAULT_APP_TITLE, APP_TITLE_KEY } from './appSettings'
 import { supabase } from './supabase'
 
 const TABLES = {
+  profiles: 'profiles',
   houses: 'houses',
   rooms: 'rooms',
   readings: 'room_meter_readings',
   invoices: 'state_invoices',
   settings: 'app_settings',
   marketSurveys: 'market_surveys',
+}
+
+export async function fetchProfiles() {
+  const { data, error } = await supabase
+    .from(TABLES.profiles)
+    .select('id,email,full_name,role,created_at,updated_at')
+    .order('email', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+export async function saveProfileRole(profile) {
+  const payload = {
+    role: profile.role,
+    full_name: profile.full_name ?? '',
+  }
+  const { data, error } = await supabase
+    .from(TABLES.profiles)
+    .update(payload)
+    .eq('id', profile.id)
+    .select('id,email,full_name,role,created_at,updated_at')
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 export async function fetchCurrentProfile(userId) {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Building2,
   CheckCircle2,
   CircleDollarSign,
@@ -34,6 +36,7 @@ import {
 import {
   deleteHouseRecord,
   deleteMarketSurveyRecord,
+  fetchProfiles,
   deleteRoomRecord,
   fetchAppTitle,
   fetchCurrentProfile,
@@ -42,12 +45,20 @@ import {
   saveHouseRecord,
   saveInvoiceRecord,
   saveMarketSurveyRecord,
+  saveProfileRole,
   saveReadingRecord,
   saveRoomRecord,
 } from './lib/supabaseData'
 
 const demoUser = { email: 'demo@nha-tro.local' }
-const ROLE_LABELS = { owner: 'Chủ sở hữu', admin: 'Admin', viewer: 'Chỉ xem' }
+const ALL_HOUSES_ID = 'all'
+const SIDEBAR_STORAGE_KEY = 'nha_tro_sidebar_collapsed'
+const ROLE_LABELS = { owner: 'Chủ sở hữu', admin: 'Quản lý', viewer: 'Chỉ xem' }
+const ROLE_OPTIONS = [
+  { value: 'owner', label: 'Chủ sở hữu' },
+  { value: 'admin', label: 'Quản lý' },
+  { value: 'viewer', label: 'Chỉ xem' },
+]
 const READ_ONLY_MESSAGE = 'Tài khoản này chỉ có quyền xem'
 
 export default function App() {
@@ -145,13 +156,22 @@ function Splash() {
 function Dashboard({ mode, user, profile, onSignOut }) {
   const [data, setData] = useState(sampleData)
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
-  const [selectedHouseId, setSelectedHouseId] = useState(sampleData.houses[0]?.id ?? '')
+  const [selectedHouseId, setSelectedHouseId] = useState(ALL_HOUSES_ID)
   const [loading, setLoading] = useState(mode === 'supabase')
   const [savingKey, setSavingKey] = useState('')
   const [saveStatus, setSaveStatus] = useState({ state: 'idle', message: '' })
   const [toast, setToast] = useState('')
   const [error, setError] = useState('')
   const [appTitle, setAppTitle] = useState(DEFAULT_APP_TITLE)
+  const [activeView, setActiveView] = useState('dashboard')
+  const [profiles, setProfiles] = useState([])
+  const [profileSearch, setProfileSearch] = useState('')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY)
+    if (saved !== null) return saved === 'true'
+    return window.matchMedia?.('(max-width: 767px)').matches ?? false
+  })
 
   const isRemote = mode === 'supabase'
   const permissions = useMemo(() => getPermissions(mode, profile), [mode, profile])
@@ -168,7 +188,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
       const [nextData, nextTitle] = await Promise.all([fetchDashboardData(), fetchAppTitle()])
       setData(nextData)
       setAppTitle(nextTitle)
-      setSelectedHouseId((current) => current || nextData.houses[0]?.id || '')
+      setSelectedHouseId((current) => current || ALL_HOUSES_ID)
     } catch (nextError) {
       setError(nextError.message)
     } finally {
@@ -176,10 +196,32 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     }
   }, [isRemote])
 
+  const refreshProfiles = useCallback(async () => {
+    if (!permissions.canManageUsers) return
+    if (!isRemote) {
+      setProfiles([{
+        id: 'demo-owner',
+        email: user?.email ?? demoUser.email,
+        full_name: 'Demo owner',
+        role: 'owner',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }])
+      return
+    }
+    setError('')
+    try {
+      const nextProfiles = await fetchProfiles()
+      setProfiles(nextProfiles)
+    } catch (nextError) {
+      setError(nextError.message)
+    }
+  }, [isRemote, permissions.canManageUsers, user?.email])
+
   useEffect(() => {
     if (!isRemote) {
       setData(sampleData)
-      setSelectedHouseId(sampleData.houses[0]?.id ?? '')
+      setSelectedHouseId(ALL_HOUSES_ID)
       return
     }
     refreshData()
@@ -187,14 +229,38 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
   useEffect(() => {
     if (!data.houses.length) {
-      setSelectedHouseId('')
+      setSelectedHouseId(ALL_HOUSES_ID)
       return
     }
-    if (!data.houses.some((house) => house.id === selectedHouseId)) setSelectedHouseId(data.houses[0].id)
+    if (selectedHouseId !== ALL_HOUSES_ID && !data.houses.some((house) => house.id === selectedHouseId)) {
+      setSelectedHouseId(ALL_HOUSES_ID)
+    }
   }, [data.houses, selectedHouseId])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed))
+    }
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    if (activeView === 'users' && permissions.canManageUsers) refreshProfiles()
+  }, [activeView, permissions.canManageUsers, refreshProfiles])
+
+  useEffect(() => {
+    if (activeView === 'users' && !permissions.canManageUsers) setActiveView('dashboard')
+  }, [activeView, permissions.canManageUsers])
 
   const dashboard = useMemo(() => calculateDashboard(data, selectedHouseId, selectedMonth), [data, selectedHouseId, selectedMonth])
   const hasHouses = data.houses.length > 0
+  const isAllHouses = selectedHouseId === ALL_HOUSES_ID
+  const filteredProfiles = useMemo(() => {
+    const query = profileSearch.trim().toLowerCase()
+    if (!query) return profiles
+    return profiles.filter((item) => [item.email, item.full_name, item.role]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query)))
+  }, [profileSearch, profiles])
 
   function showReadOnlyNotice() { setToast(READ_ONLY_MESSAGE) }
 
@@ -241,7 +307,39 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     setData((current) => ({ ...current, [collection]: [...current[collection], item] }))
   }
 
+  async function commitProfilePatch(profileRow, patch) {
+    if (!permissions.canManageUsers) {
+      showReadOnlyNotice()
+      return
+    }
+
+    const nextProfile = { ...profileRow, ...patch }
+    const ownerCount = profiles.filter((item) => item.role === 'owner').length
+    const isSelf = profileRow.id === user?.id
+    const isLastOwnerSelf = isSelf && profileRow.role === 'owner' && nextProfile.role !== 'owner' && ownerCount <= 1
+
+    if (isLastOwnerSelf) {
+      setError('Không thể hạ quyền owner cuối cùng.')
+      return
+    }
+
+    if (profileRow.role !== 'owner' && nextProfile.role === 'owner') {
+      const confirmed = window.confirm('Tài khoản này sẽ có toàn quyền hệ thống. Bạn chắc chắn không?')
+      if (!confirmed) return
+    }
+
+    const previousProfiles = profiles
+    setProfiles((current) => current.map((item) => item.id === profileRow.id ? nextProfile : item))
+    await runSave('profile-' + profileRow.id, async () => {
+      if (isRemote) {
+        const saved = await saveProfileRole(nextProfile)
+        setProfiles((current) => current.map((item) => item.id === profileRow.id ? saved : item))
+      }
+    }, 'Đã lưu quyền.', () => setProfiles(previousProfiles))
+  }
+
   async function commitAppTitle(value) {
+    if (!permissions.canManageUsers) return showReadOnlyNotice()
     const nextTitle = String(value ?? '').trim() || DEFAULT_APP_TITLE
     const previousTitle = appTitle
     setAppTitle(nextTitle)
@@ -397,7 +495,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   }
 
   async function addMarketSurvey() {
-    if (!permissions.canEdit) return showReadOnlyNotice()
+    if (!permissions.canManageUsers) return showReadOnlyNotice()
     const draft = {
       id: localId('survey'),
       area: dashboard.house?.address || dashboard.house?.name || '',
@@ -423,6 +521,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   }
 
   async function commitMarketSurveyPatch(survey, patch) {
+    if (!permissions.canManageUsers) return showReadOnlyNotice()
     const previousData = data
     const currentSurvey = data.marketSurveys?.find((item) => item.id === survey.id) ?? survey
     const nextSurvey = { ...currentSurvey, ...patch }
@@ -436,7 +535,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   }
 
   async function deleteMarketSurvey(survey) {
-    if (!permissions.canDelete) return showReadOnlyNotice()
+    if (!permissions.canManageUsers) return showReadOnlyNotice()
     const confirmed = window.confirm(`Xoa khao sat ${survey.area || survey.source || survey.room_type || ''}?`)
     if (!confirmed) return
     await runSave(`survey-delete-${survey.id}`, async () => {
@@ -463,8 +562,8 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} houseCount={data.houses.length} roomCount={data.rooms.length} onSaveAppTitle={commitAppTitle} onSignOut={onSignOut} />
+    <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
+      <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} activeView={activeView} onViewChange={setActiveView} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((current) => !current)} houseCount={data.houses.length} roomCount={data.rooms.length} onSaveAppTitle={commitAppTitle} onSignOut={onSignOut} />
       <main className="workspace">
         <header className="topbar">
           <div className="title-block">
@@ -472,13 +571,12 @@ function Dashboard({ mode, user, profile, onSignOut }) {
             <p className="eyeline">Dashboard vận hành</p>
             <InlineEditableField
               value={appTitle}
-              canEdit={permissions.canEdit}
+              canEdit={permissions.canManageUsers}
               onSave={commitAppTitle}
               placeholder={DEFAULT_APP_TITLE}
               className="app-title-inline"
               onBlocked={showReadOnlyNotice}
             />
-            {permissions.canEdit ? <span className="sheet-hint">Click vào tiêu đề để sửa</span> : null}
           </div>
           <div className="topbar-controls">
             <SaveIndicator status={saveStatus} />
@@ -489,6 +587,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
             <label className="compact-field wide">
               <span>Nhà</span>
               <select value={selectedHouseId} onChange={(event) => setSelectedHouseId(event.target.value)} disabled={!hasHouses}>
+                <option value={ALL_HOUSES_ID}>Tất cả</option>
                 {data.houses.map((house) => <option key={house.id} value={house.id}>{house.name}</option>)}
               </select>
             </label>
@@ -502,20 +601,23 @@ function Dashboard({ mode, user, profile, onSignOut }) {
         {error ? <div className="error-bar"><AlertTriangle size={18} /><span>{error}</span></div> : null}
         {toast ? <button className="toast" type="button" onClick={() => setToast('')}><CheckCircle2 size={17} />{toast}</button> : null}
 
-        {!hasHouses ? (
+        {activeView === 'users' && permissions.canManageUsers ? (
+          <UserManagementPanel profiles={filteredProfiles} search={profileSearch} onSearch={setProfileSearch} onCommit={commitProfilePatch} currentUserId={user?.id} savingKey={savingKey} />
+        ) : !hasHouses ? (
           <EmptyState canEdit={permissions.canEdit} onAddHouse={addHouse} onBlocked={showReadOnlyNotice} saving={savingKey === 'house-new'} />
         ) : (
           <>
             <MetricStrip totals={dashboard.totals} business={dashboard.business} />
+            <HouseTabs houses={data.houses} selectedHouseId={selectedHouseId} onSelect={setSelectedHouseId} />
             <section className="content-grid">
               <div className="primary-column">
-                <HouseSettings house={dashboard.house} permissions={permissions} onCommit={commitHousePatch} onAddHouse={addHouse} onDelete={deleteCurrentHouse} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
-                <RoomReadingsPanel rows={dashboard.roomRows} totals={dashboard.totals} permissions={permissions} onCommitRoom={commitRoomPatch} onDeleteRoom={deleteRoom} onCommitReading={commitReadingPatch} onAddRoom={addRoom} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
-                <MarketSurveyPanel surveys={data.marketSurveys ?? []} business={dashboard.business} permissions={permissions} onAdd={addMarketSurvey} onCommit={commitMarketSurveyPatch} onDelete={deleteMarketSurvey} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
+                {isAllHouses ? <AllHousesPanel houses={data.houses} totals={dashboard.totals} /> : <HouseSettings house={dashboard.house} permissions={permissions} onCommit={commitHousePatch} onAddHouse={addHouse} onDelete={deleteCurrentHouse} onBlocked={showReadOnlyNotice} savingKey={savingKey} />}
+                <RoomReadingsPanel rows={dashboard.roomRows} totals={dashboard.totals} permissions={permissions} onCommitRoom={commitRoomPatch} onDeleteRoom={deleteRoom} onCommitReading={commitReadingPatch} onAddRoom={isAllHouses ? null : addRoom} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
+                <MarketSurveyPanel surveys={data.marketSurveys ?? []} business={dashboard.business} permissions={{ ...permissions, canEdit: permissions.canManageUsers, canDelete: permissions.canManageUsers }} onAdd={addMarketSurvey} onCommit={commitMarketSurveyPatch} onDelete={deleteMarketSurvey} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
               </div>
               <aside className="side-column">
                 <BusinessInsightsPanel business={dashboard.business} />
-                <InvoicePanel invoice={dashboard.invoice} totals={dashboard.totals} permissions={permissions} onCommit={commitInvoicePatch} onBlocked={showReadOnlyNotice} saving={savingKey === `invoice-${dashboard.invoice.id}`} />
+                {isAllHouses ? <AggregateInvoicePanel invoice={dashboard.invoice} totals={dashboard.totals} houseCount={data.houses.length} /> : <InvoicePanel invoice={dashboard.invoice} totals={dashboard.totals} permissions={permissions} onCommit={commitInvoicePatch} onBlocked={showReadOnlyNotice} saving={savingKey === `invoice-${dashboard.invoice.id}`} />}
                 <AlertPanel alerts={dashboard.alerts} />
               </aside>
             </section>
@@ -528,18 +630,34 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
 function getPermissions(mode, profile) {
   const role = mode === 'supabase' ? profile?.role || 'viewer' : 'owner'
-  return { role, label: ROLE_LABELS[role] ?? 'Chỉ xem', canEdit: role === 'owner', canDelete: role === 'owner' }
+  return {
+    role,
+    label: ROLE_LABELS[role] ?? ROLE_LABELS.viewer,
+    canEdit: role === 'owner' || role === 'admin',
+    canDelete: role === 'owner',
+    canManageUsers: role === 'owner',
+  }
 }
-function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomCount, onSaveAppTitle, onSignOut }) {
+
+function Sidebar({ appTitle, mode, user, profile, permissions, activeView, onViewChange, collapsed, onToggleCollapsed, houseCount, roomCount, onSaveAppTitle, onSignOut }) {
   return (
     <aside className="sidebar">
-      <div className="brand-lockup">
+      <button
+        className="sidebar-toggle"
+        type="button"
+        onClick={onToggleCollapsed}
+        aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+        title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+      >
+        {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+      </button>
+      <div className="brand-lockup" title={collapsed ? appTitle : undefined}>
         <div className="brand-mark"><Home size={24} /></div>
         <div className="brand-copy">
-          {permissions.canEdit ? (
+          {permissions.canManageUsers ? (
             <InlineEditableField
               value={appTitle}
-              canEdit={permissions.canEdit}
+              canEdit={permissions.canManageUsers}
               onSave={onSaveAppTitle}
               placeholder={DEFAULT_APP_TITLE}
               className="sidebar-title-inline"
@@ -551,23 +669,115 @@ function Sidebar({ appTitle, mode, user, profile, permissions, houseCount, roomC
         </div>
       </div>
       <nav className="nav-list" aria-label="Dashboard">
-        <a className="active" href="#overview"><Gauge size={17} />Tổng quan</a>
-        <a href="#readings"><Zap size={17} />Chỉ số điện nước</a>
-        <a href="#invoice"><WalletCards size={17} />Hóa đơn nhà nước</a>
-        <a href="#alerts"><AlertTriangle size={17} />Cảnh báo</a>
+        <button className={activeView === 'dashboard' ? 'active' : ''} type="button" onClick={() => onViewChange('dashboard')} title="Tổng quan" aria-label="Tổng quan"><Gauge size={17} /><span>Tổng quan</span></button>
+        {permissions.canManageUsers ? <button className={activeView === 'users' ? 'active' : ''} type="button" onClick={() => onViewChange('users')} title="Người dùng" aria-label="Người dùng"><Users size={17} /><span>Người dùng</span></button> : null}
+        <a href="#readings" onClick={() => onViewChange('dashboard')} title="Chỉ số điện nước" aria-label="Chỉ số điện nước"><Zap size={17} /><span>Chỉ số điện nước</span></a>
+        <a href="#invoice" onClick={() => onViewChange('dashboard')} title="Hóa đơn nhà nước" aria-label="Hóa đơn nhà nước"><WalletCards size={17} /><span>Hóa đơn nhà nước</span></a>
+        <a href="#alerts" onClick={() => onViewChange('dashboard')} title="Cảnh báo" aria-label="Cảnh báo"><AlertTriangle size={17} /><span>Cảnh báo</span></a>
       </nav>
       <div className="sidebar-stats"><div><span>Nhà</span><strong>{houseCount}</strong></div><div><span>Phòng</span><strong>{roomCount}</strong></div></div>
       <div className="account-box">
         <span>{user?.email}</span>
-        {mode === 'supabase' && profile?.role ? <span className={`mode-chip role-${permissions.role}`}>{permissions.label}</span> : <span className="mode-chip role-owner">Demo chủ sở hữu</span>}
-        {mode === 'supabase' ? <button className="ghost-button" type="button" onClick={onSignOut}><LogOut size={16} />Đăng xuất</button> : null}
+        {mode === 'supabase' && profile?.role ? <span className={'mode-chip role-' + permissions.role}>{permissions.label}</span> : <span className="mode-chip role-owner">Demo chủ sở hữu</span>}
+        {mode === 'supabase' ? <button className="ghost-button" type="button" onClick={onSignOut} title="Đăng xuất" aria-label="Đăng xuất"><LogOut size={16} /><span>Đăng xuất</span></button> : null}
       </div>
     </aside>
   )
 }
-
 function RoleBadge({ permissions }) { return <span className={`role-badge role-${permissions.role}`}>{permissions.label}</span> }
 function SaveIndicator({ status }) { return status.state === 'idle' ? null : <span className={`save-indicator ${status.state}`}>{status.message}</span> }
+
+function UserManagementPanel({ profiles, search, onSearch, onCommit, currentUserId, savingKey }) {
+  const ownerCount = profiles.filter((item) => item.role === 'owner').length
+  return (
+    <section className="panel user-panel">
+      <div className="panel-heading sticky-actions">
+        <div>
+          <p className="eyeline">Người dùng</p>
+          <h2>Quản lý tài khoản và phân quyền</h2>
+        </div>
+        <label className="compact-field user-search">
+          <span>Tìm email</span>
+          <input value={search} placeholder="Nhập email hoặc tên" onChange={(event) => onSearch(event.target.value)} />
+        </label>
+      </div>
+      <div className="table-wrap user-table-wrap">
+        <table className="data-table spreadsheet-table user-table">
+          <thead><tr><th>Email</th><th>Tên hiển thị</th><th>Vai trò</th><th>Ngày tạo</th><th>Trạng thái</th></tr></thead>
+          <tbody>{profiles.map((item) => {
+            const isLastOwnerSelf = item.id === currentUserId && item.role === 'owner' && ownerCount <= 1
+            return (
+              <tr key={item.id}>
+                <td><strong>{item.email}</strong>{item.id === currentUserId ? <small>Tài khoản của bạn</small> : null}</td>
+                <td><InlineEditableField value={item.full_name} canEdit onSave={(value) => onCommit(item, { full_name: value })} placeholder="Tên hiển thị" className="compact-inline-field" /></td>
+                <td>
+                  <select
+                    className="editable-cell select-cell role-select"
+                    value={item.role}
+                    title={isLastOwnerSelf ? 'Không thể hạ quyền owner cuối cùng' : 'Click để đổi quyền'}
+                    onChange={(event) => onCommit(item, { role: event.target.value })}
+                  >
+                    {ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value} disabled={isLastOwnerSelf && option.value !== 'owner'}>{option.label}</option>)}
+                  </select>
+                </td>
+                <td>{formatDate(item.created_at)}</td>
+                <td><span className={'mode-chip role-' + item.role}>{ROLE_LABELS[item.role] ?? item.role}</span>{savingKey === 'profile-' + item.id ? <small>Đang lưu...</small> : null}</td>
+              </tr>
+            )
+          })}</tbody>
+        </table>
+      </div>
+      {!profiles.length ? <p className="empty-inline">Chưa có tài khoản phù hợp với từ khóa tìm kiếm.</p> : null}
+    </section>
+  )
+}
+
+function formatDate(value) {
+  if (!value) return '-'
+  return new Intl.DateTimeFormat('vi-VN').format(new Date(value))
+}
+
+function HouseTabs({ houses, selectedHouseId, onSelect }) {
+  return (
+    <section className="house-tabs" aria-label="Chọn nhanh nhà">
+      <button className={selectedHouseId === ALL_HOUSES_ID ? 'active' : ''} type="button" onClick={() => onSelect(ALL_HOUSES_ID)}>Tất cả</button>
+      {houses.map((house) => (
+        <button className={selectedHouseId === house.id ? 'active' : ''} key={house.id} type="button" onClick={() => onSelect(house.id)} title={house.name}>
+          {house.name}
+        </button>
+      ))}
+    </section>
+  )
+}
+
+function AllHousesPanel({ houses, totals }) {
+  return (
+    <section className="panel all-houses-panel">
+      <div className="panel-heading compact"><div><p className="eyeline">Tất cả nhà</p><h2>Tổng hợp toàn hệ thống</h2></div><Building2 size={20} /></div>
+      <div className="all-house-summary">
+        <div><span>Nhà</span><strong>{formatNumber(houses.length)}</strong></div>
+        <div><span>Phòng</span><strong>{formatNumber(totals.roomCount ?? 0)}</strong></div>
+        <div><span>Người ở</span><strong>{formatNumber(totals.residents)}</strong></div>
+      </div>
+    </section>
+  )
+}
+
+function AggregateInvoicePanel({ invoice, totals, houseCount }) {
+  return (
+    <section className="panel" id="invoice">
+      <div className="panel-heading compact"><div><p className="eyeline">Hóa đơn nhà nước</p><h2>Tổng hợp {formatNumber(houseCount)} nhà</h2></div><WalletCards size={20} /></div>
+      <div className="invoice-grid readonly-summary">
+        <div><span>Điện EVN (kWh)</span><strong>{formatNumber(invoice.electricity_kwh)}</strong></div>
+        <div><span>Tiền điện</span><strong>{formatCurrency(invoice.electricity_amount)}</strong></div>
+        <div><span>Nước nhà nước (m3)</span><strong>{formatNumber(invoice.water_m3)}</strong></div>
+        <div><span>Tiền nước</span><strong>{formatCurrency(invoice.water_amount)}</strong></div>
+        <div><span>Chi phí khác</span><strong>{formatCurrency(invoice.other_amount)}</strong></div>
+      </div>
+      <div className="variance-box"><div><span>Lệch điện</span><strong>{formatNumber(totals.electricityVariancePercent)}%</strong></div><div><span>Lệch nước</span><strong>{formatNumber(totals.waterVariancePercent)}%</strong></div></div>
+    </section>
+  )
+}
 
 function MetricStrip({ totals, business }) {
   const metrics = [
@@ -602,7 +812,6 @@ function HouseSettings({ house, permissions, onCommit, onAddHouse, onDelete, onB
             className="house-title-inline"
             onBlocked={onBlocked}
           />
-          <span className="sheet-hint">Click vào ô để sửa, Enter để lưu, Esc để hủy</span>
         </div>
         <div className="button-row">
           {permissions.canEdit ? <button className="secondary-button" type="button" onClick={onAddHouse}>{savingKey === 'house-new' ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}Thêm nhà</button> : null}
@@ -624,7 +833,7 @@ function RoomReadingsPanel({ rows, totals, permissions, onCommitRoom, onDeleteRo
   return (
     <section className="panel readings-panel" id="readings">
       <div className="panel-heading sticky-actions">
-        <div><p className="eyeline">Chỉ số điện nước</p><h2>Bảng nhập trực tiếp từng phòng</h2><span className="sheet-hint">Click vào ô để sửa</span></div>
+        <div><p className="eyeline">Chỉ số điện nước</p><h2>Bảng nhập trực tiếp từng phòng</h2></div>
         {permissions.canEdit ? <button className="secondary-button always-visible" type="button" onClick={onAddRoom}>{savingKey === 'room-new' ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}Thêm phòng</button> : null}
       </div>
       <div className="table-wrap spreadsheet-wrap">
@@ -675,7 +884,6 @@ function MarketSurveyPanel({ surveys, business, permissions, onAdd, onCommit, on
         <div>
           <p className="eyeline">Khao sat thi truong</p>
           <h2>Mat bang gia khu vuc lan can</h2>
-          <span className="sheet-hint">Nhap gia thue, gia dien nuoc va phi tu cac nguon tham khao</span>
         </div>
         {permissions.canEdit ? <button className="secondary-button always-visible" type="button" onClick={onAdd}>{savingKey === 'survey-new' ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}Them khao sat</button> : null}
       </div>
@@ -733,7 +941,7 @@ function InvoicePanel({ invoice, totals, permissions, onCommit, onBlocked, savin
   return (
     <section className="panel" id="invoice">
       <div className="panel-heading compact">
-        <div><p className="eyeline">Hóa đơn nhà nước</p><h2>Đối soát tháng</h2><span className="sheet-hint">Autosave khi rời ô</span></div>
+        <div><p className="eyeline">Hóa đơn nhà nước</p><h2>Đối soát tháng</h2></div>
         {saving ? <Loader2 className="spin" size={20} /> : <WalletCards size={20} />}
       </div>
       <div className="invoice-grid">

@@ -80,22 +80,55 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
   const readings = data.readings ?? []
   const invoices = data.invoices ?? []
   const marketSurveys = data.marketSurveys ?? []
-  const house = houses.find((item) => item.id === selectedHouseId) ?? houses[0]
+  const isAllHouses = !selectedHouseId || selectedHouseId === 'all'
+  const selectedHouse = isAllHouses ? null : houses.find((item) => item.id === selectedHouseId)
 
-  if (!house) {
+  if (!houses.length || (!isAllHouses && !selectedHouse)) {
     return {
       house: null,
       roomRows: [],
-      invoice: null,
+      invoice: createEmptyInvoice('all', selectedMonth),
       alerts: [],
       totals: emptyTotals(),
       business: emptyBusiness(),
+      isAllHouses,
     }
   }
 
   const monthDate = monthToDate(selectedMonth)
   const previousMonth = getPreviousMonth(selectedMonth)
   const previousMonthDate = monthToDate(previousMonth)
+
+  if (isAllHouses) {
+    const housesById = new Map(houses.map((house) => [house.id, house]))
+    const houseOrder = new Map(houses.map((house, index) => [house.id, index]))
+    const scopedRooms = rooms
+      .filter((room) => housesById.has(room.house_id))
+      .sort((a, b) =>
+        (houseOrder.get(a.house_id) ?? 0) - (houseOrder.get(b.house_id) ?? 0) ||
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        a.name.localeCompare(b.name),
+      )
+    const aggregateHouse = buildAggregateHouse(houses)
+    const invoice = buildAggregateInvoice({ houses, invoices, month: selectedMonth })
+    const roomRows = buildRoomRows({ house: aggregateHouse, housesById, rooms: scopedRooms, readings, selectedMonth, previousMonthDate })
+    const totals = buildTotals(roomRows, invoice)
+    totals.roomCount = scopedRooms.length
+    const previousTotals = buildMonthTotals({ houses, rooms: scopedRooms, readings, invoices, month: previousMonth })
+    const business = buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals, house: aggregateHouse })
+
+    return {
+      house: null,
+      roomRows,
+      invoice,
+      totals,
+      business,
+      alerts: buildAlerts({ house: aggregateHouse, roomRows, invoice, totals, business }),
+      isAllHouses: true,
+    }
+  }
+
+  const house = selectedHouse
   const houseRooms = rooms
     .filter((room) => room.house_id === house.id)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
@@ -105,6 +138,7 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
 
   const roomRows = buildRoomRows({ house, rooms: houseRooms, readings, selectedMonth, previousMonthDate })
   const totals = buildTotals(roomRows, invoice)
+  totals.roomCount = houseRooms.length
   const previousTotals = buildMonthTotals({ house, rooms: houseRooms, readings, invoices, month: previousMonth })
   const business = buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals, house })
 
@@ -115,13 +149,45 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
     totals,
     business,
     alerts: buildAlerts({ house, roomRows, invoice, totals, business }),
+    isAllHouses: false,
   }
 }
 
-function buildRoomRows({ house, rooms, readings, selectedMonth, previousMonthDate }) {
+function buildAggregateHouse(houses) {
+  return {
+    id: 'all',
+    name: 'Tất cả',
+    electricity_rate: average(houses.map((house) => house.electricity_rate)),
+    water_rate: average(houses.map((house) => house.water_rate)),
+    alert_variance_percent: average(houses.map((house) => house.alert_variance_percent)) || 8,
+  }
+}
+
+function buildAggregateInvoice({ houses, invoices, month }) {
+  const houseIds = new Set(houses.map((house) => house.id))
+  const monthDate = monthToDate(month)
+  const scopedInvoices = invoices.filter((invoice) => houseIds.has(invoice.house_id) && invoice.month === monthDate)
+  return {
+    id: 'aggregate-invoice-' + month,
+    house_id: 'all',
+    month: monthDate,
+    electricity_kwh: sumBy(scopedInvoices, 'electricity_kwh'),
+    electricity_amount: sumBy(scopedInvoices, 'electricity_amount'),
+    water_m3: sumBy(scopedInvoices, 'water_m3'),
+    water_amount: sumBy(scopedInvoices, 'water_amount'),
+    other_amount: sumBy(scopedInvoices, 'other_amount'),
+    note: '',
+  }
+}
+
+function sumBy(items, key) {
+  return items.reduce((sum, item) => sum + toNumber(item[key]), 0)
+}
+function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, previousMonthDate }) {
   const monthDate = monthToDate(selectedMonth)
 
   return rooms.map((room) => {
+    const roomHouse = housesById?.get(room.house_id) ?? house
     const reading =
       readings.find((item) => item.room_id === room.id && item.month === monthDate) ??
       createEmptyReading(room, selectedMonth)
@@ -134,8 +200,8 @@ function buildRoomRows({ house, rooms, readings, selectedMonth, previousMonthDat
     const waterRaw = toNumber(reading.water_current) - toNumber(reading.water_previous)
     const electricityUsage = Math.max(0, electricityRaw)
     const waterUsage = Math.max(0, waterRaw)
-    const electricityCharge = electricityUsage * toNumber(house.electricity_rate)
-    const waterCharge = waterUsage * toNumber(house.water_rate)
+    const electricityCharge = electricityUsage * toNumber(roomHouse?.electricity_rate)
+    const waterCharge = waterUsage * toNumber(roomHouse?.water_rate)
     const utilityRevenue = electricityCharge + waterCharge
     const serviceRevenue = toNumber(room.resident_count) * toNumber(room.service_fee_per_person)
     const rentRevenue = toNumber(room.monthly_rent)
@@ -206,7 +272,21 @@ function buildTotals(roomRows, invoice) {
   return totals
 }
 
-function buildMonthTotals({ house, rooms, readings, invoices, month }) {
+function buildMonthTotals({ house, houses, rooms, readings, invoices, month }) {
+  if (houses?.length) {
+    const housesById = new Map(houses.map((item) => [item.id, item]))
+    const aggregateHouse = buildAggregateHouse(houses)
+    const rows = buildRoomRows({
+      house: aggregateHouse,
+      housesById,
+      rooms,
+      readings,
+      selectedMonth: month,
+      previousMonthDate: monthToDate(getPreviousMonth(month)),
+    })
+    return buildTotals(rows, buildAggregateInvoice({ houses, invoices, month }))
+  }
+
   const invoice =
     invoices.find((item) => item.house_id === house.id && item.month === monthToDate(month)) ??
     createEmptyInvoice(house.id, month)

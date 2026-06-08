@@ -1353,3 +1353,284 @@ h2 {
     flex-direction: column;
   }
 }
+
+
+/* User role management */
+.nav-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #41504b;
+  background: transparent;
+  text-align: left;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.nav-list button.active,
+.nav-list button:hover {
+  color: #075f58;
+  background: #e8f6f3;
+}
+
+.user-panel .panel-heading {
+  align-items: flex-end;
+}
+
+.user-search {
+  width: min(320px, 100%);
+}
+
+.user-table-wrap {
+  border-radius: 6px;
+}
+
+.user-table {
+  min-width: 840px;
+}
+
+.user-table td strong,
+.user-table td small {
+  display: block;
+}
+
+.user-table td small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.role-select {
+  min-width: 150px;
+}
+
+@media (max-width: 760px) {
+  .user-table-wrap {
+    overflow-x: auto;
+  }
+
+  .user-panel .panel-heading {
+    align-items: stretch;
+  }
+}
+
+
+/* Collapsible sidebar and house tabs */
+.app-shell,
+.sidebar,
+.workspace {
+  transition: grid-template-columns 180ms ease, padding 180ms ease, width 180ms ease;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+  background:
+    linear-gradient(90deg, #ffffff 0, #ffffff 71px, transparent 72px),
+    var(--bg);
+}
+
+.sidebar {
+  z-index: 30;
+}
+
+.sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  left: 239px;
+  z-index: 70;
+  display: grid;
+  width: 34px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #075f58;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.16);
+  transform: translateY(-50%);
+}
+
+.app-shell.sidebar-collapsed .sidebar-toggle {
+  left: 55px;
+}
+
+.nav-list a,
+.nav-list button {
+  border: 0;
+  background: transparent;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+  align-items: center;
+  gap: 22px;
+  padding: 20px 10px;
+}
+
+.app-shell.sidebar-collapsed .brand-copy,
+.app-shell.sidebar-collapsed .nav-list span,
+.app-shell.sidebar-collapsed .sidebar-stats,
+.app-shell.sidebar-collapsed .account-box > span,
+.app-shell.sidebar-collapsed .account-box .mode-chip,
+.app-shell.sidebar-collapsed .ghost-button span {
+  display: none;
+}
+
+.app-shell.sidebar-collapsed .brand-lockup {
+  justify-content: center;
+  gap: 0;
+}
+
+.app-shell.sidebar-collapsed .nav-list,
+.app-shell.sidebar-collapsed .account-box {
+  width: 100%;
+}
+
+.app-shell.sidebar-collapsed .nav-list a,
+.app-shell.sidebar-collapsed .nav-list button,
+.app-shell.sidebar-collapsed .ghost-button {
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+.app-shell.sidebar-collapsed .account-box {
+  justify-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.house-tabs {
+  display: flex;
+  gap: 8px;
+  margin: -4px 0 16px;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+  scrollbar-width: thin;
+}
+
+.house-tabs button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  max-width: 260px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 14px;
+  color: #41504b;
+  background: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.house-tabs button.active,
+.house-tabs button:hover {
+  border-color: #8fcfc5;
+  color: #075f58;
+  background: #e8f6f3;
+}
+
+.all-house-summary,
+.readonly-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.readonly-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.all-house-summary div,
+.readonly-summary div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.all-house-summary span,
+.readonly-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.all-house-summary strong,
+.readonly-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: 256px minmax(0, 1fr);
+    background:
+      linear-gradient(90deg, #ffffff 0, #ffffff 255px, transparent 256px),
+      var(--bg);
+  }
+
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    padding: 24px 18px;
+  }
+
+  .nav-list {
+    grid-auto-flow: row;
+    overflow-x: visible;
+  }
+
+  .sidebar-stats,
+  .account-box {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .app-shell:not(.sidebar-collapsed) {
+    grid-template-columns: minmax(220px, 76vw) minmax(0, 1fr);
+  }
+
+  .app-shell:not(.sidebar-collapsed) .sidebar-toggle {
+    left: calc(min(220px, 76vw) - 17px);
+  }
+
+  .sidebar-toggle,
+  .app-shell.sidebar-collapsed .sidebar-toggle {
+    left: 55px;
+  }
+
+  .workspace {
+    padding: 16px 12px;
+  }
+
+  .all-house-summary,
+  .readonly-summary {
+    grid-template-columns: 1fr;
+  }
+}
