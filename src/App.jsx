@@ -607,7 +607,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
           <EmptyState canEdit={permissions.canEdit} onAddHouse={addHouse} onBlocked={showReadOnlyNotice} saving={savingKey === 'house-new'} />
         ) : (
           <>
-            <MetricStrip totals={dashboard.totals} business={dashboard.business} />
+            <MetricStrip totals={dashboard.totals} business={dashboard.business} roomRows={dashboard.roomRows} />
             <HouseTabs houses={data.houses} selectedHouseId={selectedHouseId} onSelect={setSelectedHouseId} />
             <section className="content-grid">
               <div className="primary-column">
@@ -779,24 +779,180 @@ function AggregateInvoicePanel({ invoice, totals, houseCount }) {
   )
 }
 
-function MetricStrip({ totals, business }) {
+function MetricStrip({ totals, business, roomRows }) {
+  const [selectedMetrics, setSelectedMetrics] = useState(() => new Set(['revenue', 'cost']))
+  const roomCount = totals.roomCount ?? roomRows.length
+  const allocatedCostRows = allocateCostByRevenue(roomRows, totals.totalCost)
   const metrics = [
-    { label: 'Tong thu', value: formatCurrency(totals.totalRevenue), hint: 'Tien phong + dien nuoc + phi', icon: CircleDollarSign, tone: 'green' },
-    { label: 'Tong chi', value: formatCurrency(totals.totalCost), hint: 'Hoa don dien nuoc nha nuoc', icon: WalletCards, tone: 'blue' },
-    { label: 'Chenh lech', value: formatCurrency(totals.difference), hint: `Dien nuoc: ${formatCurrency(totals.utilityDifference)}`, icon: Gauge, tone: totals.difference >= 0 ? 'teal' : 'red' },
-    { label: 'Bien loi nhuan thang', value: `${formatNumber(business.profitMarginPercent)}%`, hint: 'Loi nhuan / tong thu', icon: Gauge, tone: business.profitMarginPercent >= 0 ? 'green' : 'red' },
-    { label: 'Lai/lo dien', value: formatCurrency(business.electricityProfit), hint: 'Thu dien tru chi phi dien', icon: Zap, tone: business.electricityProfit >= 0 ? 'teal' : 'red' },
-    { label: 'Lai/lo nuoc', value: formatCurrency(business.waterProfit), hint: 'Thu nuoc tru chi phi nuoc', icon: WalletCards, tone: business.waterProfit >= 0 ? 'blue' : 'red' },
-    { label: 'Lai/lo phi dich vu', value: formatCurrency(business.serviceProfit), hint: 'Phi dich vu tru chi phi khac', icon: CircleDollarSign, tone: business.serviceProfit >= 0 ? 'green' : 'red' },
-    { label: 'Gia thue TB nha', value: formatCurrency(business.houseAverageRent), hint: 'Trung binh cac phong hien co', icon: Home, tone: 'amber' },
-    { label: 'Gia thue TB thi truong', value: formatCurrency(business.market.averageRent), hint: `${formatNumber(business.market.count)} mau khao sat`, icon: Building2, tone: 'blue' },
-    { label: 'Phong dinh gia thap', value: formatNumber(business.lowPricedRoomCount), hint: 'Thap hon thi truong >10%', icon: AlertTriangle, tone: business.lowPricedRoomCount ? 'red' : 'green' },
-    { label: 'Canh bao can xu ly', value: formatNumber(business.actionAlertCount), hint: 'Dinh gia + loi lo van hanh', icon: AlertTriangle, tone: business.actionAlertCount ? 'red' : 'green' },
-    { label: 'Chenh lech/ng??i', value: formatCurrency(totals.differencePerResident), hint: `${formatNumber(totals.residents)} nguoi dang o`, icon: Users, tone: 'amber' },
+    {
+      key: 'revenue',
+      label: 'Tổng thu',
+      value: formatCurrency(totals.totalRevenue),
+      compare: 'tiền phòng + điện nước + phí',
+      delta: totals.totalCost ? percentageChange(totals.totalRevenue, totals.totalCost) : 0,
+      values: roomRows.map((row) => row.totalRevenue),
+      color: '#0f9f98',
+      tone: 'teal',
+    },
+    {
+      key: 'rooms',
+      label: 'Số phòng',
+      value: formatNumber(roomCount),
+      compare: formatNumber(totals.residents) + ' người đang ở',
+      delta: roomCount ? (totals.residents / roomCount) * 100 : 0,
+      values: roomRows.map((row) => Math.max(1, toNumber(row.room.resident_count))),
+      color: '#e8c547',
+      tone: 'yellow',
+    },
+    {
+      key: 'costPerRoom',
+      label: 'Chi phí / phòng',
+      value: formatCurrency(roomCount ? totals.totalCost / roomCount : 0),
+      compare: 'phân bổ theo doanh thu',
+      delta: totals.totalRevenue ? (totals.totalCost / totals.totalRevenue) * -100 : 0,
+      values: allocatedCostRows,
+      color: '#64748b',
+      tone: 'slate',
+    },
+    {
+      key: 'cost',
+      label: 'Tổng chi',
+      value: formatCurrency(totals.totalCost),
+      compare: 'hóa đơn điện nước',
+      delta: totals.totalRevenue ? percentageChange(totals.totalCost, totals.totalRevenue) : 0,
+      values: allocatedCostRows,
+      color: '#4f46e5',
+      tone: 'indigo',
+    },
+    {
+      key: 'roi',
+      label: 'ROI',
+      value: formatNumber(totals.totalCost ? totals.totalRevenue / totals.totalCost : totals.totalRevenue > 0 ? 1 : 0),
+      compare: 'doanh thu / chi phí',
+      delta: business.profitMarginPercent,
+      values: roomRows.map((row, index) => allocatedCostRows[index] ? row.totalRevenue / allocatedCostRows[index] : 0),
+      color: '#d97706',
+      tone: 'amber',
+    },
   ]
-  return <section className="metric-strip" id="overview">{metrics.map((metric) => { const Icon = metric.icon; return <article className={`metric-card ${metric.tone}`} key={metric.label}><div className="metric-icon"><Icon size={20} /></div><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.hint}</small></article> })}</section>
+
+  function toggleMetric(key) {
+    setSelectedMetrics((current) => {
+      const next = new Set(current)
+      if (next.has(key)) {
+        if (next.size > 1) next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
+
+  const chartMetrics = metrics.map((metric) => ({ ...metric, active: selectedMetrics.has(metric.key) }))
+  const chartLabels = roomRows.map((row) => row.room.name)
+
+  return (
+    <section className="overview-report" id="overview">
+      <div className="overview-report-header">
+        <div>
+          <h2>Tổng quan</h2>
+          <p>Hoạt động thu chi, điện nước và hiệu suất vận hành trong kỳ.</p>
+        </div>
+      </div>
+      <div className="metric-strip">
+        {metrics.map((metric) => {
+          const selected = selectedMetrics.has(metric.key)
+          return (
+            <button className={'metric-card ' + metric.tone + (selected ? ' selected' : '')} key={metric.key} type="button" onClick={() => toggleMetric(metric.key)}>
+              <span className="metric-card-top"><strong>{metric.label}</strong><span className="metric-help">?</span><span className="metric-checkbox">{selected ? '✓' : ''}</span></span>
+              <b>{metric.value}</b>
+              <small>{metric.compare} <em className={metric.delta < 0 ? 'negative' : 'positive'}>{metric.delta ? formatSignedPercent(metric.delta) : ''}</em></small>
+            </button>
+          )
+        })}
+      </div>
+      <OverviewLineChart metrics={chartMetrics} labels={chartLabels} />
+    </section>
+  )
 }
 
+function OverviewLineChart({ metrics, labels }) {
+  const activeMetrics = metrics.filter((metric) => metric.active)
+  const chartWidth = 920
+  const chartHeight = 300
+  const padding = { top: 22, right: 24, bottom: 42, left: 48 }
+  const innerWidth = chartWidth - padding.left - padding.right
+  const innerHeight = chartHeight - padding.top - padding.bottom
+  const maxValue = Math.max(1, ...activeMetrics.flatMap((metric) => metric.values.map((value) => Math.abs(toNumber(value)))))
+  const pointCount = Math.max(2, ...activeMetrics.map((metric) => metric.values.length), labels.length)
+  const axisLabels = labels.length ? labels : Array.from({ length: pointCount }, (_, index) => 'P' + (index + 1))
+  const gridLines = [0, 0.25, 0.5, 0.75, 1]
+
+  const lines = activeMetrics.map((metric) => {
+    const values = metric.values.length ? metric.values : [0]
+    const points = Array.from({ length: pointCount }, (_, index) => {
+      const value = toNumber(values[index] ?? values[values.length - 1] ?? 0)
+      const x = padding.left + (pointCount === 1 ? innerWidth / 2 : (index / (pointCount - 1)) * innerWidth)
+      const y = padding.top + innerHeight - (Math.abs(value) / maxValue) * innerHeight
+      return { x, y, value }
+    })
+    return {
+      ...metric,
+      points,
+      path: points.map((point, index) => (index === 0 ? 'M' : 'L') + point.x.toFixed(1) + ' ' + point.y.toFixed(1)).join(' '),
+    }
+  })
+
+  return (
+    <div className="overview-chart-panel">
+      <div className="overview-legend">
+        {activeMetrics.map((metric) => <span key={metric.key}><i style={{ background: metric.color }} />{metric.label}</span>)}
+      </div>
+      <svg className="overview-chart" viewBox={'0 0 ' + chartWidth + ' ' + chartHeight} role="img" aria-label="Biểu đồ tổng quan theo từng phòng">
+        {gridLines.map((line) => {
+          const y = padding.top + innerHeight * line
+          return <line className="chart-grid" x1={padding.left} x2={chartWidth - padding.right} y1={y} y2={y} key={line} />
+        })}
+        {gridLines.map((line) => {
+          const value = maxValue * (1 - line)
+          const y = padding.top + innerHeight * line
+          return <text className="chart-axis-label" x={padding.left - 10} y={y + 4} textAnchor="end" key={'y-' + line}>{formatCompactNumber(value)}</text>
+        })}
+        {axisLabels.map((label, index) => {
+          const x = padding.left + (pointCount === 1 ? innerWidth / 2 : (index / (pointCount - 1)) * innerWidth)
+          return <text className="chart-x-label" x={x} y={chartHeight - 12} textAnchor="middle" key={label + index}>{label}</text>
+        })}
+        {lines.map((line) => <path className="chart-line" d={line.path} stroke={line.color} key={line.key} />)}
+        {lines.map((line) => line.points.map((point, index) => <circle className="chart-point" cx={point.x} cy={point.y} r="3.5" fill={line.color} key={line.key + '-' + index} />))}
+      </svg>
+    </div>
+  )
+}
+
+function allocateCostByRevenue(roomRows, totalCost) {
+  const totalRevenue = roomRows.reduce((sum, row) => sum + toNumber(row.totalRevenue), 0)
+  if (!roomRows.length) return []
+  if (!totalRevenue) return roomRows.map(() => totalCost / roomRows.length)
+  return roomRows.map((row) => (toNumber(row.totalRevenue) / totalRevenue) * totalCost)
+}
+
+function percentageChange(value, baseline) {
+  if (!baseline) return 0
+  return ((toNumber(value) - toNumber(baseline)) / Math.abs(toNumber(baseline))) * 100
+}
+
+function formatSignedPercent(value) {
+  const number = toNumber(value)
+  const sign = number > 0 ? '+' : ''
+  return sign + formatNumber(number) + '%'
+}
+
+function formatCompactNumber(value) {
+  const number = Math.abs(toNumber(value))
+  if (number >= 1000000) return formatNumber(number / 1000000) + 'M'
+  if (number >= 1000) return formatNumber(number / 1000) + 'K'
+  return formatNumber(number)
+}
 function HouseSettings({ house, permissions, onCommit, onAddHouse, onDelete, onBlocked, savingKey }) {
   if (!house) return null
   return (

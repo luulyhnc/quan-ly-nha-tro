@@ -1634,3 +1634,220 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Overview report like ads dashboard */
+.overview-report {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  padding: 20px;
+  background: #ffffff;
+  box-shadow: 0 8px 26px rgba(17, 24, 39, 0.04);
+}
+
+.overview-report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.overview-report-header h2 {
+  font-size: 19px;
+  font-weight: 780;
+}
+
+.overview-report-header p {
+  margin: 7px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.overview-report .metric-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(136px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.overview-report .metric-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  min-height: 106px;
+  border: 1px solid #e5e7eb;
+  border-radius: 3px;
+  padding: 14px 14px 12px;
+  color: #1f2937;
+  background: #ffffff;
+  text-align: left;
+  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.03);
+}
+
+.overview-report .metric-card.selected {
+  border-color: #13a29a;
+  background: #e9fbfa;
+  box-shadow: inset 0 0 0 1px rgba(19, 162, 154, 0.3), 0 8px 18px rgba(19, 162, 154, 0.08);
+}
+
+.metric-card-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.metric-card-top strong {
+  overflow: hidden;
+  color: #25312d;
+  font-size: 13px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-help {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.metric-checkbox {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #ffffff;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.metric-card.selected .metric-checkbox {
+  border-color: #13a29a;
+  background: #13a29a;
+}
+
+.overview-report .metric-card b {
+  display: block;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.05;
+  font-weight: 790;
+}
+
+.overview-report .metric-card small {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.overview-report .metric-card em {
+  margin-left: 6px;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.overview-report .metric-card em.positive {
+  color: #0f766e;
+}
+
+.overview-report .metric-card em.negative {
+  color: #c2410c;
+}
+
+.overview-chart-panel {
+  min-width: 0;
+}
+
+.overview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 4px;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.overview-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overview-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.overview-chart {
+  display: block;
+  width: 100%;
+  min-height: 280px;
+}
+
+.chart-grid {
+  stroke: #edf1f3;
+  stroke-width: 1;
+}
+
+.chart-axis-label,
+.chart-x-label {
+  fill: #9ca3af;
+  font-size: 12px;
+}
+
+.chart-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.chart-point {
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+@media (max-width: 1080px) {
+  .overview-report .metric-strip {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .overview-report {
+    padding: 14px;
+  }
+
+  .overview-report .metric-strip {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .overview-report .metric-card {
+    flex: 0 0 190px;
+  }
+
+  .overview-chart {
+    min-width: 620px;
+  }
+
+  .overview-chart-panel {
+    overflow-x: auto;
+  }
+}
