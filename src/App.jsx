@@ -471,7 +471,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     const previousData = data
     const month = monthToDate(selectedMonth)
     const existing = data.readings.find((reading) => reading.room_id === row.room.id && reading.month === month)
-    const baseReading = existing ?? createEmptyReading(row.room, selectedMonth)
+    const baseReading = existing ?? createEmptyReading(row.room, selectedMonth, row.previousReading)
     const nextReading = { ...baseReading, ...patch }
     upsertReadingLocal(baseReading.id, nextReading)
     await runSave(`reading-${row.room.id}`, async () => {
@@ -1000,7 +1000,7 @@ function RoomReadingsPanel({ rows, totals, permissions, onCommitRoom, onDeleteRo
             <td><EditableCell value={row.room.floor ?? ''} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { floor: value })} /></td>
             <td><EditableSelect value={row.room.status} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { status: value })} options={[{ value: 'occupied', label: 'Đang ở' }, { value: 'vacant', label: 'Trống' }, { value: 'maintenance', label: 'Sửa chữa' }]} /></td>
             <td><EditableCell type="number" value={row.room.resident_count} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { resident_count: value })} /></td>
-            <td><EditableCell type="number" value={row.room.monthly_rent} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { monthly_rent: value })} /></td>
+            <td><EditableCell type="number" value={row.monthlyRoomPrice} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { room_price: value })} /></td>
             <td><EditableCell type="number" value={row.reading.electricity_previous} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { electricity_previous: value })} /></td>
             <td><EditableCell type="number" value={row.reading.electricity_current} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { electricity_current: value })} helper={`${formatNumber(row.electricityUsage)} kWh`} /></td>
             <td><EditableCell type="number" value={row.reading.water_previous} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { water_previous: value })} /></td>
@@ -1023,7 +1023,7 @@ function RoomMobileCard({ row, permissions, onCommitRoom, onDeleteRoom, onCommit
       <div className="mobile-grid">
         <EditableField label="Mã phòng" value={row.room.name} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { name: value })} />
         <EditableField label="Số người" type="number" value={row.room.resident_count} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { resident_count: value })} />
-        <EditableField label="Tiền phòng" type="number" value={row.room.monthly_rent} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitRoom(row.room, { monthly_rent: value })} />
+        <EditableField label="Tiền phòng" type="number" value={row.monthlyRoomPrice} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { room_price: value })} />
         <EditableField label="Điện cũ" type="number" value={row.reading.electricity_previous} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { electricity_previous: value })} />
         <EditableField label="Điện mới" type="number" value={row.reading.electricity_current} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { electricity_current: value })} />
         <EditableField label="Nước cũ" type="number" value={row.reading.water_previous} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitReading(row, { water_previous: value })} />

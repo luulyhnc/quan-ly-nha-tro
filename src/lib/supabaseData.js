@@ -203,6 +203,8 @@ export async function saveReadingRecord(reading) {
     electricity_current: numberOrZero(reading.electricity_current),
     water_previous: numberOrZero(reading.water_previous),
     water_current: numberOrZero(reading.water_current),
+    occupants: numberOrZero(reading.occupants),
+    room_price: numberOrZero(reading.room_price),
     electric_old: numberOrZero(reading.electricity_previous),
     electric_new: numberOrZero(reading.electricity_current),
     water_old: numberOrZero(reading.water_previous),

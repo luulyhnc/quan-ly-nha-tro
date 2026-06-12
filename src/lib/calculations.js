@@ -46,12 +46,18 @@ export function getPreviousMonth(month) {
   return date.toISOString().slice(0, 7)
 }
 
-export function createEmptyReading(room, month) {
+export function createEmptyReading(room, month, previousReading) {
+  const inheritedRoomPrice = toNumber(
+    previousReading?.room_price ?? previousReading?.monthly_rent ?? room.monthly_rent ?? room.room_price,
+  )
+
   return {
     id: localId('reading'),
     house_id: room.house_id,
     room_id: room.id,
     month: monthToDate(month),
+    occupants: toNumber(previousReading?.occupants ?? room.resident_count ?? room.occupants),
+    room_price: inheritedRoomPrice,
     electricity_previous: 0,
     electricity_current: 0,
     water_previous: 0,
@@ -188,12 +194,12 @@ function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, prev
 
   return rooms.map((room) => {
     const roomHouse = housesById?.get(room.house_id) ?? house
-    const reading =
-      readings.find((item) => item.room_id === room.id && item.month === monthDate) ??
-      createEmptyReading(room, selectedMonth)
     const previousReading = readings.find(
       (item) => item.room_id === room.id && item.month === previousMonthDate,
     )
+    const reading =
+      readings.find((item) => item.room_id === room.id && item.month === monthDate) ??
+      createEmptyReading(room, selectedMonth, previousReading)
 
     const electricityRaw =
       toNumber(reading.electricity_current) - toNumber(reading.electricity_previous)
@@ -203,8 +209,9 @@ function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, prev
     const electricityCharge = electricityUsage * toNumber(roomHouse?.electricity_rate)
     const waterCharge = waterUsage * toNumber(roomHouse?.water_rate)
     const utilityRevenue = electricityCharge + waterCharge
+    const monthlyRoomPrice = toNumber(reading.room_price ?? room.monthly_rent ?? room.room_price)
     const serviceRevenue = toNumber(room.resident_count) * toNumber(room.service_fee_per_person)
-    const rentRevenue = toNumber(room.monthly_rent)
+    const rentRevenue = monthlyRoomPrice
     const totalRevenue = utilityRevenue + serviceRevenue + rentRevenue
 
     const previousElectricityUsage = previousReading
@@ -230,7 +237,9 @@ function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, prev
       utilityRevenue,
       serviceRevenue,
       rentRevenue,
+      monthlyRoomPrice,
       totalRevenue,
+      previousReading,
       previousElectricityUsage,
       previousWaterUsage,
     }
@@ -361,8 +370,8 @@ function emptyMarketStats() {
 
 function buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals, house }) {
   const market = calculateMarketStats(marketSurveys)
-  const roomsWithRent = roomRows.filter((row) => toNumber(row.room.monthly_rent) > 0)
-  const houseAverageRent = average(roomsWithRent.map((row) => row.room.monthly_rent))
+  const roomsWithRent = roomRows.filter((row) => toNumber(row.monthlyRoomPrice) > 0)
+  const houseAverageRent = average(roomsWithRent.map((row) => row.monthlyRoomPrice))
   const activeRevenuePerResident = roomRows
     .filter((row) => toNumber(row.room.resident_count) > 0)
     .map((row) => row.totalRevenue / toNumber(row.room.resident_count))
@@ -375,7 +384,7 @@ function buildBusinessAnalysis({ marketSurveys, roomRows, totals, previousTotals
   const actualWaterUnitCost = totals.invoiceWaterM3 > 0 ? totals.waterCost / totals.invoiceWaterM3 : 0
 
   const roomComparisons = roomRows.map((row) => {
-    const roomRent = toNumber(row.room.monthly_rent)
+    const roomRent = toNumber(row.monthlyRoomPrice)
     const marketDeltaPercent = market.averageRent > 0 ? ((roomRent - market.averageRent) / market.averageRent) * 100 : 0
     const residents = toNumber(row.room.resident_count)
     const revenuePerResident = residents > 0 ? row.totalRevenue / residents : 0
