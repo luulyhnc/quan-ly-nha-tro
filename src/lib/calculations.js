@@ -80,12 +80,27 @@ export function createEmptyInvoice(houseId, month) {
   }
 }
 
+export function createEmptyRoomBill(room, month, totalAmount = 0) {
+  return {
+    id: localId('room-bill'),
+    house_id: room.house_id,
+    room_id: room.id,
+    month: monthToDate(month),
+    total_amount: toNumber(totalAmount),
+    paid_amount: 0,
+    status: 'unpaid',
+    paid_at: '',
+    note: '',
+  }
+}
+
 export function calculateDashboard(data, selectedHouseId, selectedMonth) {
   const houses = data.houses ?? []
   const rooms = data.rooms ?? []
   const readings = data.readings ?? []
   const invoices = data.invoices ?? []
   const marketSurveys = data.marketSurveys ?? []
+  const roomBills = data.roomBills ?? []
   const isAllHouses = !selectedHouseId || selectedHouseId === 'all'
   const selectedHouse = isAllHouses ? null : houses.find((item) => item.id === selectedHouseId)
 
@@ -117,7 +132,7 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
       )
     const aggregateHouse = buildAggregateHouse(houses)
     const invoice = buildAggregateInvoice({ houses, invoices, month: selectedMonth })
-    const roomRows = buildRoomRows({ house: aggregateHouse, housesById, rooms: scopedRooms, readings, selectedMonth, previousMonthDate })
+    const roomRows = buildRoomRows({ house: aggregateHouse, housesById, rooms: scopedRooms, readings, roomBills, selectedMonth, previousMonthDate })
     const totals = buildTotals(roomRows, invoice)
     totals.roomCount = scopedRooms.length
     const previousTotals = buildMonthTotals({ houses, rooms: scopedRooms, readings, invoices, month: previousMonth })
@@ -142,7 +157,7 @@ export function calculateDashboard(data, selectedHouseId, selectedMonth) {
     invoices.find((item) => item.house_id === house.id && item.month === monthDate) ??
     createEmptyInvoice(house.id, selectedMonth)
 
-  const roomRows = buildRoomRows({ house, rooms: houseRooms, readings, selectedMonth, previousMonthDate })
+  const roomRows = buildRoomRows({ house, rooms: houseRooms, readings, roomBills, selectedMonth, previousMonthDate })
   const totals = buildTotals(roomRows, invoice)
   totals.roomCount = houseRooms.length
   const previousTotals = buildMonthTotals({ house, rooms: houseRooms, readings, invoices, month: previousMonth })
@@ -189,7 +204,15 @@ function buildAggregateInvoice({ houses, invoices, month }) {
 function sumBy(items, key) {
   return items.reduce((sum, item) => sum + toNumber(item[key]), 0)
 }
-function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, previousMonthDate }) {
+
+function resolvePaymentStatus(status, paidAmount, totalAmount) {
+  const paid = toNumber(paidAmount)
+  const total = toNumber(totalAmount)
+  if (total > 0 && paid >= total) return 'paid'
+  if (paid > 0) return 'partial'
+  return status === 'paid' && total <= 0 ? 'paid' : 'unpaid'
+}
+function buildRoomRows({ house, housesById, rooms, readings, roomBills = [], selectedMonth, previousMonthDate }) {
   const monthDate = monthToDate(selectedMonth)
 
   return rooms.map((room) => {
@@ -213,6 +236,11 @@ function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, prev
     const serviceRevenue = toNumber(room.resident_count) * toNumber(room.service_fee_per_person)
     const rentRevenue = monthlyRoomPrice
     const totalRevenue = utilityRevenue + serviceRevenue + rentRevenue
+    const existingBill = roomBills.find((item) => item.room_id === room.id && item.month === monthDate)
+    const bill = existingBill ?? createEmptyRoomBill(room, selectedMonth, totalRevenue)
+    const paidAmount = Math.max(0, toNumber(bill.paid_amount))
+    const outstandingAmount = Math.max(0, totalRevenue - paidAmount)
+    const paymentStatus = resolvePaymentStatus(bill.status, paidAmount, totalRevenue)
 
     const previousElectricityUsage = previousReading
       ? Math.max(
@@ -239,6 +267,10 @@ function buildRoomRows({ house, housesById, rooms, readings, selectedMonth, prev
       rentRevenue,
       monthlyRoomPrice,
       totalRevenue,
+      bill,
+      paidAmount,
+      outstandingAmount,
+      paymentStatus,
       previousReading,
       previousElectricityUsage,
       previousWaterUsage,
@@ -258,6 +290,12 @@ function buildTotals(roomRows, invoice) {
       acc.rentRevenue += row.rentRevenue
       acc.serviceRevenue += row.serviceRevenue
       acc.totalRevenue += row.totalRevenue
+      acc.billedTotal += row.totalRevenue
+      acc.paidTotal += row.paidAmount
+      acc.outstandingTotal += row.outstandingAmount
+      if (row.paymentStatus === 'paid') acc.paidRoomCount += 1
+      else if (row.paymentStatus === 'partial') acc.partialRoomCount += 1
+      else acc.unpaidRoomCount += 1
       return acc
     },
     emptyTotals(),
@@ -320,6 +358,12 @@ function emptyTotals() {
     rentRevenue: 0,
     serviceRevenue: 0,
     totalRevenue: 0,
+    billedTotal: 0,
+    paidTotal: 0,
+    outstandingTotal: 0,
+    paidRoomCount: 0,
+    partialRoomCount: 0,
+    unpaidRoomCount: 0,
     electricityCost: 0,
     waterCost: 0,
     otherCost: 0,

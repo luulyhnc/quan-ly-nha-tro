@@ -46,6 +46,7 @@ import {
   saveInvoiceRecord,
   saveMarketSurveyRecord,
   saveProfileRole,
+  saveRoomBillRecord,
   saveReadingRecord,
   saveRoomRecord,
 } from './lib/supabaseData'
@@ -60,6 +61,12 @@ const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Chỉ xem' },
 ]
 const READ_ONLY_MESSAGE = 'Tài khoản này chỉ có quyền xem'
+const BILL_STATUS_OPTIONS = [
+  { value: 'unpaid', label: 'Chưa thu' },
+  { value: 'partial', label: 'Thu một phần' },
+  { value: 'paid', label: 'Đã thu' },
+]
+const BILL_STATUS_LABELS = Object.fromEntries(BILL_STATUS_OPTIONS.map((item) => [item.value, item.label]))
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -295,16 +302,19 @@ function Dashboard({ mode, user, profile, onSignOut }) {
   }
 
   function replaceCollectionItem(collection, previousId, nextItem) {
-    setData((current) => ({
-      ...current,
-      [collection]: current[collection].some((item) => item.id === previousId)
-        ? current[collection].map((item) => item.id === previousId ? nextItem : item)
-        : [...current[collection], nextItem],
-    }))
+    setData((current) => {
+      const items = current[collection] ?? []
+      return {
+        ...current,
+        [collection]: items.some((item) => item.id === previousId)
+          ? items.map((item) => item.id === previousId ? nextItem : item)
+          : [...items, nextItem],
+      }
+    })
   }
 
   function addCollectionItem(collection, item) {
-    setData((current) => ({ ...current, [collection]: [...current[collection], item] }))
+    setData((current) => ({ ...current, [collection]: [...(current[collection] ?? []), item] }))
   }
 
   async function commitProfilePatch(profileRow, patch) {
@@ -395,10 +405,12 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     await runSave(`house-delete-${dashboard.house.id}`, async () => {
       if (isRemote) await deleteHouseRecord(dashboard.house.id)
       setData((current) => ({
+        ...current,
         houses: current.houses.filter((house) => house.id !== dashboard.house.id),
         rooms: current.rooms.filter((room) => room.house_id !== dashboard.house.id),
         readings: current.readings.filter((reading) => reading.house_id !== dashboard.house.id),
         invoices: current.invoices.filter((invoice) => invoice.house_id !== dashboard.house.id),
+        roomBills: (current.roomBills ?? []).filter((bill) => bill.house_id !== dashboard.house.id),
       }))
     }, 'Đã xóa nhà.')
   }
@@ -451,6 +463,7 @@ function Dashboard({ mode, user, profile, onSignOut }) {
         ...current,
         rooms: current.rooms.filter((item) => item.id !== room.id),
         readings: current.readings.filter((item) => item.room_id !== room.id),
+        roomBills: (current.roomBills ?? []).filter((item) => item.room_id !== room.id),
       }))
     }, `Đã xóa ${room.name}.`)
   }
@@ -561,6 +574,52 @@ function Dashboard({ mode, user, profile, onSignOut }) {
     }, 'Đã lưu hóa đơn nhà nước.', () => setData(previousData))
   }
 
+
+  function upsertRoomBillLocal(previousBillId, nextBill) {
+    setData((current) => {
+      const bills = current.roomBills ?? []
+      const exists = bills.some((bill) => bill.id === previousBillId)
+      return {
+        ...current,
+        roomBills: exists
+          ? bills.map((bill) => bill.id === previousBillId ? nextBill : bill)
+          : [...bills, nextBill],
+      }
+    })
+  }
+
+  async function commitRoomBillPatch(row, patch) {
+    const previousData = data
+    const currentBill = row.bill
+    const nextBill = {
+      ...currentBill,
+      total_amount: row.totalRevenue,
+      ...patch,
+    }
+    upsertRoomBillLocal(currentBill.id, nextBill)
+    await runSave(`room-bill-${row.room.id}`, async () => {
+      if (isRemote) {
+        const saved = await saveRoomBillRecord(nextBill)
+        replaceCollectionItem('roomBills', currentBill.id, saved)
+      }
+    }, `Đã lưu công nợ phòng ${row.room.name}.`, () => setData(previousData))
+  }
+
+  function exportBillingCsv() {
+    if (!dashboard.roomRows.length) {
+      setToast('Không có dòng công nợ để xuất.')
+      return
+    }
+    downloadBillingCsv({ rows: dashboard.roomRows, houses: data.houses, selectedMonth, appTitle })
+    setToast('Đã tải file công nợ CSV.')
+  }
+
+  function printBill(row) {
+    const house = data.houses.find((item) => item.id === row.room.house_id)
+    const opened = printRoomBill({ row, house, selectedMonth, appTitle })
+    if (!opened) setError('Trình duyệt đang chặn cửa sổ in. Hãy cho phép popup rồi thử lại.')
+  }
+
   return (
     <div className={'app-shell' + (sidebarCollapsed ? ' sidebar-collapsed' : '')}>
       <Sidebar appTitle={appTitle} mode={mode} user={user} profile={profile} permissions={permissions} activeView={activeView} onViewChange={setActiveView} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((current) => !current)} houseCount={data.houses.length} roomCount={data.rooms.length} onSaveAppTitle={commitAppTitle} onSignOut={onSignOut} />
@@ -603,6 +662,11 @@ function Dashboard({ mode, user, profile, onSignOut }) {
 
         {activeView === 'users' && permissions.canManageUsers ? (
           <UserManagementPanel profiles={filteredProfiles} search={profileSearch} onSearch={setProfileSearch} onCommit={commitProfilePatch} currentUserId={user?.id} savingKey={savingKey} />
+        ) : activeView === 'billing' && hasHouses ? (
+          <>
+            <HouseTabs houses={data.houses} selectedHouseId={selectedHouseId} onSelect={setSelectedHouseId} />
+            <BillingPanel rows={dashboard.roomRows} totals={dashboard.totals} houses={data.houses} selectedMonth={selectedMonth} permissions={permissions} onCommitBill={commitRoomBillPatch} onExportCsv={exportBillingCsv} onPrintBill={printBill} onBlocked={showReadOnlyNotice} savingKey={savingKey} />
+          </>
         ) : !hasHouses ? (
           <EmptyState canEdit={permissions.canEdit} onAddHouse={addHouse} onBlocked={showReadOnlyNotice} saving={savingKey === 'house-new'} />
         ) : (
@@ -1090,6 +1154,178 @@ function BusinessInsightsPanel({ business }) {
       </div>
     </section>
   )
+}
+
+
+function BillingPanel({ rows, totals, houses, selectedMonth, permissions, onCommitBill, onExportCsv, onPrintBill, onBlocked, savingKey }) {
+  const houseById = useMemo(() => new Map(houses.map((house) => [house.id, house])), [houses])
+  const monthLabel = formatMonthLabel(selectedMonth)
+
+  function handleStatusChange(row, status) {
+    onCommitBill(row, buildBillStatusPatch(row, status))
+  }
+
+  function handlePaidAmount(row, value) {
+    const paidAmount = toNumber(value)
+    onCommitBill(row, {
+      paid_amount: paidAmount,
+      status: inferBillStatus(paidAmount, row.totalRevenue),
+      paid_at: paidAmount > 0 ? (row.bill.paid_at || todayInputValue()) : null,
+    })
+  }
+
+  return (
+    <section className="panel billing-panel" id="billing">
+      <div className="panel-heading sticky-actions">
+        <div>
+          <p className="eyeline">Công nợ tháng {monthLabel}</p>
+          <h2>Hóa đơn từng phòng</h2>
+        </div>
+        <div className="button-row">
+          <button className="secondary-button" type="button" onClick={onExportCsv}>Xuất CSV</button>
+        </div>
+      </div>
+
+      <div className="billing-summary">
+        <div><span>Tổng hóa đơn</span><strong>{formatCurrency(totals.billedTotal)}</strong></div>
+        <div><span>Đã thu</span><strong>{formatCurrency(totals.paidTotal)}</strong></div>
+        <div><span>Còn phải thu</span><strong>{formatCurrency(totals.outstandingTotal)}</strong></div>
+        <div><span>Chưa thu / thu một phần</span><strong>{formatNumber(totals.unpaidRoomCount + totals.partialRoomCount)}</strong></div>
+      </div>
+
+      <div className="table-wrap spreadsheet-wrap billing-wrap">
+        <table className="data-table spreadsheet-table billing-table">
+          <thead><tr><th>Nhà</th><th>Phòng</th><th>Số người</th><th>Tiền phòng</th><th>Điện nước + phí</th><th>Tổng hóa đơn</th><th>Đã thu</th><th>Còn lại</th><th>Trạng thái</th><th>Ngày thu</th><th>Ghi chú</th><th></th></tr></thead>
+          <tbody>{rows.map((row) => {
+            const house = houseById.get(row.room.house_id)
+            const saving = savingKey === 'room-bill-' + row.room.id
+            return (
+              <tr key={row.room.id}>
+                <td><strong>{house?.name ?? '-'}</strong></td>
+                <td><strong>{row.room.name}</strong>{saving ? <small>Đang lưu...</small> : null}</td>
+                <td>{formatNumber(row.room.resident_count)}</td>
+                <td>{formatCurrency(row.rentRevenue)}</td>
+                <td><strong>{formatCurrency(row.utilityRevenue + row.serviceRevenue)}</strong><small>Điện {formatNumber(row.electricityUsage)} kWh, nước {formatNumber(row.waterUsage)} m3</small></td>
+                <td><strong>{formatCurrency(row.totalRevenue)}</strong></td>
+                <td><EditableCell type="number" value={row.paidAmount} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => handlePaidAmount(row, value)} /></td>
+                <td><strong className={row.outstandingAmount > 0 ? 'debt-due' : 'debt-ok'}>{formatCurrency(row.outstandingAmount)}</strong></td>
+                <td><BillStatusSelect value={row.paymentStatus} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => handleStatusChange(row, value)} /></td>
+                <td>{permissions.canEdit ? <input className="editable-cell" type="date" value={(row.bill.paid_at ?? '').slice(0, 10)} onChange={(event) => onCommitBill(row, { paid_at: event.target.value || null })} /> : <button className="read-only-cell" type="button" onClick={onBlocked}>{formatDate(row.bill.paid_at)}</button>}</td>
+                <td><EditableCell value={row.bill.note ?? ''} canEdit={permissions.canEdit} onBlocked={onBlocked} onCommit={(value) => onCommitBill(row, { note: value })} /></td>
+                <td className="row-actions">
+                  {permissions.canEdit ? <button className="secondary-button compact-action" type="button" onClick={() => handleStatusChange(row, 'paid')}>Đã thu đủ</button> : null}
+                  <button className="ghost-button compact-action" type="button" onClick={() => onPrintBill(row)}>In</button>
+                </td>
+              </tr>
+            )
+          })}</tbody>
+          <tfoot><tr><td>Tổng</td><td>{formatNumber(rows.length)} phòng</td><td>{formatNumber(totals.residents)}</td><td>{formatCurrency(totals.rentRevenue)}</td><td>{formatCurrency(totals.utilityRevenue + totals.serviceRevenue)}</td><td>{formatCurrency(totals.billedTotal)}</td><td>{formatCurrency(totals.paidTotal)}</td><td>{formatCurrency(totals.outstandingTotal)}</td><td></td><td></td><td></td><td></td></tr></tfoot>
+        </table>
+      </div>
+      {!rows.length ? <p className="empty-inline">Không có phòng trong phạm vi đang chọn.</p> : null}
+    </section>
+  )
+}
+
+function BillStatusSelect({ value, canEdit, onCommit, onBlocked }) {
+  if (!canEdit) {
+    return <button className="read-only-cell" type="button" onClick={onBlocked}><span>{BILL_STATUS_LABELS[value] ?? value}</span></button>
+  }
+  return <select className="editable-cell select-cell" value={value} onChange={(event) => onCommit(event.target.value)}>{BILL_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+}
+
+function buildBillStatusPatch(row, status) {
+  if (status === 'paid') {
+    return { status, paid_amount: row.totalRevenue, paid_at: row.bill.paid_at || todayInputValue() }
+  }
+  if (status === 'unpaid') {
+    return { status, paid_amount: 0, paid_at: null }
+  }
+  return { status, paid_amount: Math.min(row.paidAmount, row.totalRevenue), paid_at: row.bill.paid_at || todayInputValue() }
+}
+
+function inferBillStatus(paidAmount, totalAmount) {
+  const paid = toNumber(paidAmount)
+  const total = toNumber(totalAmount)
+  if (total > 0 && paid >= total) return 'paid'
+  if (paid > 0) return 'partial'
+  return 'unpaid'
+}
+
+function todayInputValue() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function formatMonthLabel(month) {
+  if (!month) return '-'
+  const [year, monthIndex] = month.split('-')
+  return 'tháng ' + monthIndex + '/' + year
+}
+
+function csvCell(value) {
+  const textValue = String(value ?? '')
+  return '"' + textValue.replaceAll('"', '""') + '"'
+}
+
+function downloadBillingCsv({ rows, houses, selectedMonth, appTitle }) {
+  const houseById = new Map(houses.map((house) => [house.id, house]))
+  const headers = ['Tháng', 'Nhà', 'Phòng', 'Số người', 'Tiền phòng', 'Điện nước và phí', 'Tổng hóa đơn', 'Đã thu', 'Còn lại', 'Trạng thái', 'Ngày thu', 'Ghi chú']
+  const lines = rows.map((row) => {
+    const house = houseById.get(row.room.house_id)
+    return [
+      selectedMonth,
+      house?.name ?? '',
+      row.room.name,
+      row.room.resident_count,
+      Math.round(row.rentRevenue),
+      Math.round(row.utilityRevenue + row.serviceRevenue),
+      Math.round(row.totalRevenue),
+      Math.round(row.paidAmount),
+      Math.round(row.outstandingAmount),
+      BILL_STATUS_LABELS[row.paymentStatus] ?? row.paymentStatus,
+      row.bill.paid_at ?? '',
+      row.bill.note ?? '',
+    ].map(csvCell).join(',')
+  })
+  const csv = '\uFEFF' + [headers.map(csvCell).join(','), ...lines].join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = (appTitle || 'nha-tro') + '-cong-no-' + selectedMonth + '.csv'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function printRoomBill({ row, house, selectedMonth, appTitle }) {
+  const popup = window.open('', '_blank', 'width=760,height=900')
+  if (!popup) return false
+  const title = escapeHtml(appTitle || 'Quản lý nhà trọ')
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Hóa đơn phòng ${escapeHtml(row.room.name)}</title><style>
+    body{font-family:Arial,sans-serif;color:#17211f;margin:32px;line-height:1.45} h1{font-size:24px;margin:0 0 4px} h2{font-size:18px;margin:24px 0 8px}.muted{color:#64748b}.box{border:1px solid #dce4e1;border-radius:8px;padding:16px;margin-top:16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{display:flex;justify-content:space-between;border-bottom:1px solid #edf2f0;padding:8px 0}.total{font-size:20px;font-weight:800}.paid{color:#166534}.due{color:#b91c1c}@media print{button{display:none}body{margin:18mm}}
+  </style></head><body>
+    <button onclick="window.print()">In hóa đơn</button>
+    <h1>${title}</h1><div class="muted">Hóa đơn phòng tháng ${escapeHtml(selectedMonth)}</div>
+    <div class="box grid"><div><strong>Nhà</strong><br>${escapeHtml(house?.name || '')}</div><div><strong>Phòng</strong><br>${escapeHtml(row.room.name)}</div><div><strong>Số người</strong><br>${escapeHtml(formatNumber(row.room.resident_count))}</div><div><strong>Trạng thái</strong><br>${escapeHtml(BILL_STATUS_LABELS[row.paymentStatus] ?? row.paymentStatus)}</div></div>
+    <h2>Chi tiết</h2>
+    <div class="box"><div class="row"><span>Tiền phòng</span><strong>${escapeHtml(formatCurrency(row.rentRevenue))}</strong></div><div class="row"><span>Tiền điện</span><strong>${escapeHtml(formatCurrency(row.electricityCharge))}</strong></div><div class="row"><span>Tiền nước</span><strong>${escapeHtml(formatCurrency(row.waterCharge))}</strong></div><div class="row"><span>Phí dịch vụ</span><strong>${escapeHtml(formatCurrency(row.serviceRevenue))}</strong></div><div class="row total"><span>Tổng hóa đơn</span><strong>${escapeHtml(formatCurrency(row.totalRevenue))}</strong></div><div class="row paid"><span>Đã thu</span><strong>${escapeHtml(formatCurrency(row.paidAmount))}</strong></div><div class="row due"><span>Còn lại</span><strong>${escapeHtml(formatCurrency(row.outstandingAmount))}</strong></div></div>
+    <p class="muted">Ghi chú: ${escapeHtml(row.bill.note || '')}</p>
+  </body></html>`
+  popup.document.write(html)
+  popup.document.close()
+  popup.focus()
+  return true
 }
 
 function InvoicePanel({ invoice, totals, permissions, onCommit, onBlocked, saving }) {

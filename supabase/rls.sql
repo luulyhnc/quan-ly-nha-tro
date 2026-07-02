@@ -335,3 +335,38 @@ on public.state_invoices
 for delete
 to authenticated
 using (public.current_user_can_delete());
+
+
+-- room_bills
+alter table public.room_bills enable row level security;
+grant select, insert, update, delete on public.room_bills to authenticated;
+
+drop policy if exists room_bills_select_authenticated on public.room_bills;
+drop policy if exists room_bills_insert_editors on public.room_bills;
+drop policy if exists room_bills_update_editors on public.room_bills;
+drop policy if exists room_bills_delete_owner on public.room_bills;
+
+create policy room_bills_select_authenticated
+on public.room_bills
+for select
+to authenticated
+using (auth.uid() is not null);
+
+create policy room_bills_insert_editors
+on public.room_bills
+for insert
+to authenticated
+with check (public.current_user_can_edit());
+
+create policy room_bills_update_editors
+on public.room_bills
+for update
+to authenticated
+using (public.current_user_can_edit())
+with check (public.current_user_can_edit());
+
+create policy room_bills_delete_owner
+on public.room_bills
+for delete
+to authenticated
+using (public.current_user_can_delete());

@@ -1851,3 +1851,90 @@ h2 {
     overflow-x: auto;
   }
 }
+
+
+/* Room billing and receivables */
+.billing-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.billing-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.billing-summary div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.billing-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.billing-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.billing-table {
+  min-width: 1380px;
+}
+
+.billing-table th:nth-child(1),
+.billing-table td:nth-child(1) {
+  min-width: 180px;
+}
+
+.billing-table th:nth-child(5),
+.billing-table td:nth-child(5),
+.billing-table th:nth-child(11),
+.billing-table td:nth-child(11) {
+  min-width: 170px;
+}
+
+.debt-due,
+.debt-ok {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 13px;
+}
+
+.debt-due {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.debt-ok {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.compact-action {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .billing-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .billing-summary {
+    grid-template-columns: 1fr;
+  }
+}

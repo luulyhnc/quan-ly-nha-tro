@@ -175,6 +175,30 @@ export const sampleData = {
       survey_date: '2026-06-03',
     },
   ],
+  roomBills: [
+    {
+      id: 'local-room-bill-101-2026-06',
+      house_id: 'local-house-1',
+      room_id: 'local-room-101',
+      month: '2026-06-01',
+      total_amount: 3993200,
+      paid_amount: 3993200,
+      status: 'paid',
+      paid_at: '2026-06-08',
+      note: 'Da thu tien mat',
+    },
+    {
+      id: 'local-room-bill-102-2026-06',
+      house_id: 'local-house-1',
+      room_id: 'local-room-102',
+      month: '2026-06-01',
+      total_amount: 3450400,
+      paid_amount: 1500000,
+      status: 'partial',
+      paid_at: '2026-06-10',
+      note: 'Hen thanh toan phan con lai',
+    },
+  ],
   invoices: [
     {
       id: 'local-invoice-house-1-2026-06',

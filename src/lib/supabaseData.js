@@ -9,6 +9,7 @@ const TABLES = {
   invoices: 'state_invoices',
   settings: 'app_settings',
   marketSurveys: 'market_surveys',
+  roomBills: 'room_bills',
 }
 
 export async function fetchProfiles() {
@@ -49,7 +50,7 @@ export async function fetchCurrentProfile(userId) {
 }
 
 export async function fetchDashboardData() {
-  const [houses, rooms, readings, invoices, marketSurveys] = await Promise.all([
+  const [houses, rooms, readings, invoices, marketSurveys, roomBills] = await Promise.all([
     supabase.from(TABLES.houses).select('*').order('created_at', { ascending: true }),
     supabase
       .from(TABLES.rooms)
@@ -72,6 +73,11 @@ export async function fetchDashboardData() {
       .order('survey_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(2000),
+    supabase
+      .from(TABLES.roomBills)
+      .select('*')
+      .order('month', { ascending: false })
+      .limit(5000),
   ])
 
   for (const response of [houses, rooms, readings, invoices]) {
@@ -84,12 +90,17 @@ export async function fetchDashboardData() {
     throw marketSurveys.error
   }
 
+  if (roomBills.error && !isMissingTableError(roomBills.error, TABLES.roomBills)) {
+    throw roomBills.error
+  }
+
   return {
     houses: houses.data ?? [],
     rooms: rooms.data ?? [],
     readings: readings.data ?? [],
     invoices: invoices.data ?? [],
     marketSurveys: marketSurveys.error ? [] : marketSurveys.data ?? [],
+    roomBills: roomBills.error ? [] : roomBills.data ?? [],
   }
 }
 
@@ -214,6 +225,28 @@ export async function saveReadingRecord(reading) {
 
   const { data, error } = await supabase
     .from(TABLES.readings)
+    .upsert(payload, { onConflict: 'room_id,month' })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function saveRoomBillRecord(bill) {
+  const payload = stripLocalId({
+    id: bill.id,
+    house_id: bill.house_id,
+    room_id: bill.room_id,
+    month: bill.month,
+    total_amount: numberOrZero(bill.total_amount),
+    paid_amount: numberOrZero(bill.paid_amount),
+    status: bill.status || 'unpaid',
+    paid_at: bill.paid_at || null,
+    note: bill.note ?? '',
+  })
+
+  const { data, error } = await supabase
+    .from(TABLES.roomBills)
     .upsert(payload, { onConflict: 'room_id,month' })
     .select()
     .single()
