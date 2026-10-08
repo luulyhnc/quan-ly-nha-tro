@@ -68,12 +68,19 @@ const BILL_STATUS_OPTIONS = [
 ]
 const BILL_STATUS_LABELS = Object.fromEntries(BILL_STATUS_OPTIONS.map((item) => [item.value, item.label]))
 
+function isPasswordRecoveryUrl() {
+  if (typeof window === 'undefined') return false
+  const marker = `${window.location.search} ${window.location.hash}`
+  return marker.includes('type=recovery')
+}
+
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [passwordRecovery, setPasswordRecovery] = useState(isPasswordRecoveryUrl)
 
   const loadProfile = useCallback(async (nextSession) => {
     if (!nextSession?.user?.id) {
@@ -107,7 +114,8 @@ export default function App() {
     }
 
     supabase.auth.getSession().then(({ data }) => applySession(data.session))
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
       applySession(nextSession)
     })
 
@@ -128,11 +136,79 @@ export default function App() {
   if (!isSupabaseConfigured) return <Dashboard mode="demo" user={demoUser} profile={{ role: 'owner' }} onSignOut={handleSignOut} />
   if (authLoading) return <Splash />
   if (!session) return <Login />
+  if (session && passwordRecovery) {
+    return <PasswordReset user={session.user} onComplete={() => setPasswordRecovery(false)} onSignOut={handleSignOut} />
+  }
 
   return (
     <ProtectedRoute loading={profileLoading} profile={profile} error={profileError} onSignOut={handleSignOut}>
       <Dashboard mode="supabase" user={session.user} profile={profile} onSignOut={handleSignOut} />
     </ProtectedRoute>
+  )
+}
+
+function PasswordReset({ user, onComplete, onSignOut }) {
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState('')
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setMessage('')
+
+    if (password.length < 6) {
+      setMessage('Mật khẩu mới cần tối thiểu 6 ký tự.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setMessage('Hai mật khẩu chưa trùng nhau.')
+      return
+    }
+
+    setSubmitting(true)
+    const { error } = await supabase.auth.updateUser({ password })
+    setSubmitting(false)
+
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+
+    window.history.replaceState({}, document.title, window.location.pathname)
+    onComplete()
+  }
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-visual">
+        <div className="brand-lockup">
+          <div className="brand-mark"><Home size={26} /></div>
+          <div><strong>{DEFAULT_APP_TITLE}</strong><span>Đặt lại mật khẩu Supabase</span></div>
+        </div>
+      </section>
+      <form className="auth-card" onSubmit={handleSubmit}>
+        <div>
+          <p className="eyeline">Đặt lại mật khẩu</p>
+          <h1>Tạo mật khẩu mới</h1>
+          <p className="auth-note">Tài khoản: {user?.email}</p>
+        </div>
+        <label className="field">
+          <span>Mật khẩu mới</span>
+          <input type="password" minLength={6} value={password} autoComplete="new-password" required onChange={(event) => setPassword(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Nhập lại mật khẩu</span>
+          <input type="password" minLength={6} value={confirmPassword} autoComplete="new-password" required onChange={(event) => setConfirmPassword(event.target.value)} />
+        </label>
+        {message ? <p className="form-message">{message}</p> : null}
+        <button className="primary-button" type="submit" disabled={submitting}>
+          {submitting ? <Loader2 className="spin" size={17} /> : <ShieldCheck size={17} />}
+          Lưu mật khẩu mới
+        </button>
+        <button className="ghost-button full" type="button" onClick={onSignOut}>Đăng xuất</button>
+      </form>
+    </main>
   )
 }
 

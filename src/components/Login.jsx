@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Home, Loader2, ShieldCheck } from 'lucide-react'
 import { DEFAULT_APP_TITLE } from '../lib/appSettings'
-import { supabase } from '../lib/supabase'
+import { supabase, supabaseUrlHost } from '../lib/supabase'
 
 const COPY = {
   brand: DEFAULT_APP_TITLE,
@@ -12,6 +12,24 @@ const COPY = {
   signUp: 'T\u1ea1o t\u00e0i kho\u1ea3n',
   password: 'M\u1eadt kh\u1ea9u',
   created: 'T\u00e0i kho\u1ea3n \u0111\u00e3 \u0111\u01b0\u1ee3c t\u1ea1o. Vui l\u00f2ng ch\u1edd ch\u1ee7 s\u1edf h\u1eefu c\u1ea5p quy\u1ec1n.',
+  forgotPassword: 'Qu\u00ean m\u1eadt kh\u1ea9u?',
+  resetSent: 'Đã gửi email đặt lại mật khẩu. Hãy mở email mới nhất từ Supabase.',
+}
+
+function authRedirectUrl() {
+  return new URL(import.meta.env.BASE_URL || '/', window.location.origin).toString()
+}
+
+function friendlyAuthError(error) {
+  const message = String(error?.message || error || '')
+  if (message === 'Failed to fetch' || /fetch/i.test(message)) {
+    const hostText = supabaseUrlHost ? ` (${supabaseUrlHost})` : ''
+    return `Không kết nối được Supabase Auth${hostText}. Kiểm tra GitHub Actions secret VITE_SUPABASE_URL phải đúng dạng https://xxxx.supabase.co, anon key đúng project, Supabase project đang hoạt động và không bị mạng/trình duyệt chặn.`
+  }
+  if (message === 'Invalid login credentials') {
+    return 'Email hoặc mật khẩu chưa đúng. Nếu quên mật khẩu, bấm Quên mật khẩu để nhận email đặt lại.'
+  }
+  return message || 'Không thể đăng nhập. Vui lòng thử lại.'
 }
 
 export default function Login() {
@@ -26,21 +44,46 @@ export default function Login() {
     setSubmitting(true)
     setMessage('')
 
-    const { error } =
-      mode === 'sign-in'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password })
+    try {
+      const credentials = { email: email.trim(), password }
+      const { error } =
+        mode === 'sign-in'
+          ? await supabase.auth.signInWithPassword(credentials)
+          : await supabase.auth.signUp({ ...credentials, options: { emailRedirectTo: authRedirectUrl() } })
 
-    if (error) {
-      setMessage(error.message)
-    } else if (mode === 'sign-up') {
-      await supabase.auth.signOut()
-      setMode('sign-in')
-      setPassword('')
-      setMessage(COPY.created)
+      if (error) {
+        setMessage(friendlyAuthError(error))
+      } else if (mode === 'sign-up') {
+        await supabase.auth.signOut()
+        setMode('sign-in')
+        setPassword('')
+        setMessage(COPY.created)
+      }
+    } catch (error) {
+      setMessage(friendlyAuthError(error))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handlePasswordReset() {
+    if (!email.trim()) {
+      setMessage('Nhập email trước khi gửi yêu cầu đặt lại mật khẩu.')
+      return
     }
 
-    setSubmitting(false)
+    setSubmitting(true)
+    setMessage('')
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: authRedirectUrl(),
+      })
+      setMessage(error ? friendlyAuthError(error) : COPY.resetSent)
+    } catch (error) {
+      setMessage(friendlyAuthError(error))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -122,6 +165,11 @@ export default function Login() {
           {submitting ? <Loader2 className="spin" size={17} /> : <ShieldCheck size={17} />}
           {mode === 'sign-in' ? COPY.signIn : COPY.signUp}
         </button>
+        {mode === 'sign-in' ? (
+          <button className="ghost-button full" type="button" disabled={submitting} onClick={handlePasswordReset}>
+            {COPY.forgotPassword}
+          </button>
+        ) : null}
       </form>
     </main>
   )

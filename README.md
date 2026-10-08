@@ -66,6 +66,46 @@ where email = 'your-owner-email@example.com';
 
 Khong dua service role key vao frontend. Frontend chi duoc dung anon public key qua `VITE_SUPABASE_ANON_KEY`; bao mat du lieu dua vao Supabase Auth + RLS.
 
+## Dat lai mat khau Supabase Auth
+
+Trong Supabase Dashboard, vao Authentication > URL Configuration va cau hinh:
+
+- Site URL: `https://luulyhnc.github.io/quan-ly-nha-tro/`
+- Redirect URLs: them `https://luulyhnc.github.io/quan-ly-nha-tro/` va URL local neu can: `http://localhost:5173/`
+
+Frontend gui email dat lai mat khau bang Supabase Auth:
+
+```js
+await supabase.auth.resetPasswordForEmail(email, {
+  redirectTo: 'https://luulyhnc.github.io/quan-ly-nha-tro/',
+})
+```
+
+Sau khi nguoi dung bam link trong email, Supabase tao recovery session. Frontend cap nhat mat khau moi bang:
+
+```js
+await supabase.auth.updateUser({
+  password: 'MAT_KHAU_MOI_TOI_THIEU_6_KY_TU',
+})
+```
+
+Neu can dat lai mat khau thu cong trong Supabase Dashboard:
+
+1. Vao Authentication > Users.
+2. Chon user theo email.
+3. Dung thao tac Send password recovery hoac Update password neu Supabase hien tuy chon nay.
+4. Khong sua truc tiep bang SQL trong `auth.users` vi Supabase quan ly password hash noi bo.
+
+## Loi dang nhap Failed to fetch
+
+Neu web public hien `Failed to fetch` khi dang nhap, trinh duyet khong ket noi duoc Supabase Auth. Kiem tra theo thu tu:
+
+1. GitHub repo > Settings > Secrets and variables > Actions > Secrets phai co dung `VITE_SUPABASE_URL` va `VITE_SUPABASE_ANON_KEY`.
+2. `VITE_SUPABASE_URL` chi dung dang `https://xxxx.supabase.co`, khong co `/auth/v1`, khong phai link dashboard Supabase.
+3. `VITE_SUPABASE_ANON_KEY` la anon/publishable key, khong phai service role key.
+4. Supabase project phai dang active, khong bi pause/delete.
+5. Sau khi sua secret, chay lai GitHub Actions deploy de build lai file static.
+
 ## Deploy GitHub Pages
 
 1. Push repo len GitHub branch `main`.

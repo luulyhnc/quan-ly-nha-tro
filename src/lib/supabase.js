@@ -31,6 +31,7 @@ function getSupabaseConfigError() {
 
 export const supabaseConfigError = getSupabaseConfigError()
 export const isSupabaseConfigured = hasSupabaseConfig && !supabaseConfigError
+export const supabaseUrlHost = isSupabaseConfigured ? new URL(supabaseUrl).host : ''
 
 if (import.meta.env.DEV) {
   console.log('hasSupabaseConfig', hasSupabaseConfig)
